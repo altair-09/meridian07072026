@@ -1,10 +1,8 @@
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { paths } from "./paths.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
-const GMGN_CONFIG_PATH = path.join(__dirname, "gmgn-config.json");
+const USER_CONFIG_PATH = paths.userConfigPath;
+const GMGN_CONFIG_PATH = paths.gmgnConfigPath;
 const DEFAULT_HIVEMIND_URL = "https://api.agentmeridian.xyz";
 const DEFAULT_AGENT_MERIDIAN_API_URL = "https://api.agentmeridian.xyz/api";
 const DEFAULT_AGENT_MERIDIAN_PUBLIC_KEY = "bWVyaWRpYW4taXMtdGhlLWJlc3QtYWdlbnRz";
@@ -194,6 +192,8 @@ export const config = {
     pnlSanityMaxDiffPct:   u.pnlSanityMaxDiffPct   ?? 5,    // max allowed diff between reported and derived pnl % before ignoring a tick
     // SOL mode — positions, PnL, and balances reported in SOL instead of USD
     solMode:               u.solMode               ?? false,
+    // Minimum floor for computeDeployAmount; autoresearch may set this lower
+    minDeployAmountSol:    u.minDeployAmountSol    ?? 0.1,
   },
 
   // ─── Strategy Mapping ───────────────────
@@ -254,6 +254,21 @@ export const config = {
     lpAgentRelayEnabled: u.lpAgentRelayEnabled ?? false,
   },
 
+  // ─── HiveMind Publish Mode ────────────────
+  // "production" = normal publish; "experimental" = tag with profile+runId; "off" = no publish
+  hiveMindPublishMode: u.hiveMindPublishMode ?? "production",
+
+  // ─── Autoresearch ─────────────────────────
+  autoresearch: {
+    enabled:             u.autoresearch?.enabled             ?? false,
+    runId:               process.env.MERIDIAN_RESEARCH_RUN_ID ?? u.autoresearch?.runId ?? null,
+    capitalBudgetPct:    u.autoresearch?.capitalBudgetPct    ?? 0.02,
+    maxWalletSol:        u.autoresearch?.maxWalletSol        ?? null,
+    dailyLossLimitSol:   u.autoresearch?.dailyLossLimitSol   ?? null,
+    promptNotes:         u.autoresearch?.promptNotes         ?? null,
+    candidateConfigPath: u.autoresearch?.candidateConfigPath ?? null,
+  },
+
   jupiter: {
     apiKey: process.env.JUPITER_API_KEY ?? "",
     referralAccount:
@@ -292,9 +307,9 @@ export const config = {
  *   4.0 SOL wallet → 1.33 SOL deploy
  */
 export function computeDeployAmount(walletSol) {
-  const reserve  = config.management.gasReserve      ?? 0.2;
-  const pct      = config.management.positionSizePct ?? 0.35;
-  const floor    = config.management.deployAmountSol;
+  const reserve  = config.management.gasReserve         ?? 0.2;
+  const pct      = config.management.positionSizePct    ?? 0.35;
+  const floor    = config.management.minDeployAmountSol ?? config.management.deployAmountSol;
   const ceil     = config.risk.maxDeployAmount;
   const deployable = Math.max(0, walletSol - reserve);
   const dynamic    = deployable * pct;

@@ -2,6 +2,7 @@ import "./envcrypt.js";
 import cron from "node-cron";
 import readline from "readline";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { agentLoop } from "./agent.js";
 import { log } from "./logger.js";
@@ -41,10 +42,66 @@ const isMain = entrypointPath
   ? path.resolve(entrypointPath) === fileURLToPath(import.meta.url)
   : false;
 
+async function runAutoresearchStartupGuard() {
+  const profile = process.env.MERIDIAN_PROFILE;
+  const dataDir = process.env.MERIDIAN_DATA_DIR;
+  const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+  log("startup", `[autoresearch] Profile: ${profile}, DataDir: ${dataDir || "(unset)"}`);
+
+  // 1. Verify profile isolation — MERIDIAN_DATA_DIR must be set and differ from project root
+  if (!dataDir) {
+    log("startup_error", "[autoresearch] ABORT: MERIDIAN_DATA_DIR is not set. Profile isolation is required.");
+    process.exit(1);
+  }
+  if (path.resolve(rootDir, dataDir) === rootDir) {
+    log("startup_error", "[autoresearch] ABORT: MERIDIAN_DATA_DIR resolves to project root. Use a subdirectory like profiles/autoresearch.");
+    process.exit(1);
+  }
+
+  // 2. Verify autoresearch wallet key is present
+  const arWalletKey = process.env.WALLET_PRIVATE_KEY;
+  if (!arWalletKey) {
+    log("startup_error", "[autoresearch] ABORT: WALLET_PRIVATE_KEY is not set.");
+    process.exit(1);
+  }
+
+  // 3. Check for wallet collision with production config (project root user-config.json)
+  try {
+    const prodConfigPath = path.join(rootDir, "user-config.json");
+    if (fs.existsSync(prodConfigPath)) {
+      const prodConfig = JSON.parse(fs.readFileSync(prodConfigPath, "utf8"));
+      // Only compare if production config explicitly defines its own walletKey
+      if (prodConfig.walletKey && prodConfig.walletKey === arWalletKey) {
+        log("startup_error", "[autoresearch] ABORT: Autoresearch wallet matches production wallet. Use a different wallet for autoresearch.");
+        process.exit(1);
+      }
+    }
+  } catch { /* ignore read errors — can't guarantee prod config exists */ }
+
+  // 4. Warn (soft) if wallet balance exceeds configured cap
+  const maxWalletSol = config.autoresearch?.maxWalletSol;
+  if (maxWalletSol != null && process.env.DRY_RUN !== "true") {
+    try {
+      const { getWalletBalances } = await import("./tools/wallet.js");
+      const balances = await getWalletBalances({});
+      if (balances?.sol > maxWalletSol) {
+        log("startup_warn", `[autoresearch] Wallet balance ${balances.sol} SOL exceeds maxWalletSol=${maxWalletSol}. New deploys will be blocked until balance drops.`);
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  const runId = config.autoresearch?.runId;
+  log("startup", `[autoresearch] Guards passed. runId=${runId ?? "(none)"}, hiveMindPublishMode=${config.hiveMindPublishMode}`);
+}
+
 if (isMain) {
   log("startup", "DLMM LP Agent starting...");
   log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
   log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
+  if (process.env.MERIDIAN_PROFILE === "autoresearch") {
+    await runAutoresearchStartupGuard();
+  }
   ensureAgentId();
   bootstrapHiveMind().catch((error) => log("hivemind_warn", `Bootstrap failed: ${error.message}`));
   startHiveMindBackgroundSync();

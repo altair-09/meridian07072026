@@ -22,13 +22,14 @@ import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsO
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { getRecentDecisions } from "../decision-log.js";
+import { paths } from "../paths.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync, spawn } from "child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONFIG_PATH = path.join(__dirname, "../user-config.json");
+const USER_CONFIG_PATH = paths.userConfigPath;
 const GMGN_CONFIG_PATH = path.join(__dirname, "../gmgn-config.json");
 const POOL_DISCOVERY_BASE = "https://pool-discovery-api.datapi.meteora.ag";
 const MIN_VOLATILITY_TIMEFRAME = "30m";
@@ -65,6 +66,56 @@ function redactAppliedConfig(applied) {
 function numberOrNull(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+// ─── Autoresearch Helpers ────────────────────────────────────────
+
+function runResultsPath(runId) {
+  if (!runId) return null;
+  const rootDir = path.dirname(__dirname);
+  return path.join(rootDir, "research", "runs", runId, "results.jsonl");
+}
+
+function computeTodayRunLossSol(runId) {
+  const filePath = runResultsPath(runId);
+  if (!filePath || !fs.existsSync(filePath)) return 0;
+  const todayPrefix = new Date().toISOString().slice(0, 10);
+  let loss = 0;
+  try {
+    const lines = fs.readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.ts?.startsWith(todayPrefix) && typeof entry.net_sol === "number" && entry.net_sol < 0) {
+          loss += Math.abs(entry.net_sol);
+        }
+      } catch { /* skip malformed line */ }
+    }
+  } catch { /* ignore read errors */ }
+  return loss;
+}
+
+function writeRunResult(runId, closeResult, args) {
+  const filePath = runResultsPath(runId);
+  if (!filePath) return;
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const entry = {
+      ts: new Date().toISOString(),
+      run_id: runId,
+      pool_address: closeResult.pool || args?.pool_address || null,
+      pool_name: closeResult.pool_name || args?.pool_name || null,
+      net_sol: numberOrNull(closeResult.pnl_sol ?? closeResult.net_sol) ?? null,
+      fees_sol: numberOrNull(closeResult.fees_earned_sol) ?? null,
+      pnl_pct: numberOrNull(closeResult.pnl_pct) ?? null,
+      close_reason: closeResult.close_reason || args?.reason || null,
+      oor_time_min: numberOrNull(closeResult.oor_time_minutes) ?? null,
+      drawdown_pct: numberOrNull(closeResult.drawdown_pct) ?? null,
+    };
+    fs.appendFileSync(filePath, JSON.stringify(entry) + "\n");
+  } catch (e) {
+    log("executor_warn", `writeRunResult failed: ${e.message}`);
+  }
 }
 
 function getVolatilityTimeframe(sourceTimeframe) {
@@ -628,6 +679,9 @@ export async function executeTool(name, args) {
         notifyDeploy({ pair: result.pool_name || args.pool_name || args.pool_address?.slice(0, 8), amountSol: args.amount_y ?? args.amount_sol ?? 0, position: result.position, tx: result.txs?.[0] ?? result.tx, priceRange: result.price_range, rangeCoverage: result.range_coverage, binStep: result.bin_step, baseFee: result.base_fee }).catch(() => {});
       } else if (name === "close_position") {
         notifyClose({ pair: result.pool_name || args.position_address?.slice(0, 8), pnlUsd: result.pnl_usd ?? 0, pnlPct: result.pnl_pct ?? 0 }).catch(() => {});
+        if (process.env.MERIDIAN_PROFILE === "autoresearch" && config.autoresearch?.runId) {
+          writeRunResult(config.autoresearch.runId, result, args);
+        }
         // Note low-yield closes in pool memory so screener avoids redeploying
         if (args.reason && args.reason.toLowerCase().includes("yield")) {
           const poolAddr = result.pool || args.pool_address;
@@ -802,7 +856,7 @@ async function runSafetyChecks(name, args) {
         };
       }
 
-      const minDeploy = Math.max(0.1, config.management.deployAmountSol);
+      const minDeploy = Math.max(0.01, config.management.minDeployAmountSol ?? config.management.deployAmountSol);
       if (amountY < minDeploy) {
         return {
           pass: false,
@@ -826,6 +880,26 @@ async function runSafetyChecks(name, args) {
             pass: false,
             reason: `Insufficient SOL: have ${balance.sol} SOL, need ${minRequired} SOL (${amountY} deploy + ${gasReserve} gas reserve).`,
           };
+        }
+
+        // Autoresearch: pause new deploys when budget or daily loss limits are hit
+        if (process.env.MERIDIAN_PROFILE === "autoresearch") {
+          const ar = config.autoresearch;
+          if (ar?.maxWalletSol != null && balance.sol > ar.maxWalletSol) {
+            return {
+              pass: false,
+              reason: `autoresearch: wallet ${balance.sol} SOL exceeds maxWalletSol=${ar.maxWalletSol}. Funding cap reached.`,
+            };
+          }
+          if (ar?.dailyLossLimitSol != null) {
+            const todayLoss = computeTodayRunLossSol(ar.runId);
+            if (todayLoss >= ar.dailyLossLimitSol) {
+              return {
+                pass: false,
+                reason: `autoresearch: today's loss ${todayLoss.toFixed(4)} SOL has hit the daily limit (${ar.dailyLossLimitSol} SOL). No new deploys until tomorrow.`,
+              };
+            }
+          }
         }
       }
 

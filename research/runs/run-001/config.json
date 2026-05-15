@@ -1,0 +1,10 @@
+{
+  "runId": "run-001",
+  "startedAt": null,
+  "targetBudgetSol": 0.5,
+  "durationHours": 72,
+  "maxClosedPositions": 10,
+  "scoringCriteria": ["net_sol_pnl", "fee_sol", "drawdown_pct", "oor_time_pct"],
+  "promptNotes": "",
+  "notes": "Baseline run — default screener settings, solMode=true, maxPositions=1"
+}
