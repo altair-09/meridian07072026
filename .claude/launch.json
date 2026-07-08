@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "meridian-dashboard",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["index.js"],
+      "env": { "DRY_RUN": "true" },
+      "port": 4000
+    },
+    {
+      "name": "dashboard-v2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--strictPort"],
+      "cwd": "dashboard-v2/frontend",
+      "port": 5173
+    },
+    {
+      "name": "dashboard-v2-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "dashboard-v2/backend",
+      "env": { "PORT": "4001" },
+      "port": 4001
+    }
+  ]
+}

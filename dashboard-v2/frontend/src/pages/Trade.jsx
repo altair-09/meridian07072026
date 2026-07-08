@@ -6,7 +6,12 @@ import Sparkline from "../components/Sparkline";
 import InfoDot from "../components/InfoDot";
 import ColumnsPanel from "../components/ColumnsPanel";
 import FilterDrawer from "../components/FilterDrawer";
-import { poolBrowser, generateMockOhlcv, feeBreakdown } from "../mock/mockData";
+import { generateMockOhlcv } from "../mock/mockData";
+import { api } from "../api";
+import { useApi } from "../hooks/useApi";
+import ConnectWalletButton from "../components/ConnectWalletButton";
+import CreatePositionPanel from "../components/CreatePositionPanel";
+import WalletPositions from "../components/WalletPositions";
 import { COLUMN_DEFS, DEFAULT_COLUMN_ORDER, DEFAULT_VISIBLE_COLUMNS } from "../mock/poolColumns";
 
 const TIMEFRAMES = ["5m", "30m", "1h", "2h", "4h", "12h", "24h"];
@@ -46,103 +51,12 @@ function pct(n) {
 
 // ── Pool detail panel ─────────────────────────────────────────────────────────
 
-function DeployForm({ pool }) {
-  const [tab, setTab] = useState("Create Position");
-  const [strategy, setStrategy] = useState("Bid Ask");
-  const [autoFill, setAutoFill] = useState(true);
-  const [excludeAutoManage, setExcludeAutoManage] = useState(true);
-  const [amtX, setAmtX] = useState("");
-  const [amtY, setAmtY] = useState("");
-  const [priceRange, setPriceRange] = useState([40, 60]);
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {DEPLOY_TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, height: 32, fontSize: 12, fontWeight: 500, borderRadius: "var(--radius-control)", cursor: "pointer",
-            border: "1px solid var(--hairline-strong)",
-            background: tab === t ? "var(--primary)" : "var(--surface-card-elevated)",
-            color: tab === t ? "#fff" : "var(--text-muted)",
-          }}>{t}</button>
-        ))}
-      </div>
-
-      {tab === "Create Position" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFill(e.target.checked)} />
-            <span style={{ fontSize: 13, color: "var(--text-body)" }}>Auto-fill 50/50</span>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Amount X ({pool?.name?.split("-")[0]})</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" value={amtX} onChange={(e) => setAmtX(e.target.value)} />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Amount Y (SOL)</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" value={amtY} onChange={(e) => setAmtY(e.target.value)} />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Strategy</span>
-            <select className="input" style={{ height: 38 }} value={strategy} onChange={(e) => setStrategy(e.target.value)}>
-              <option>Spot</option><option>Curve</option><option>Bid Ask</option>
-            </select>
-          </label>
-          <div>
-            <span className="t-caption text-muted">Price range</span>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <input className="input" style={{ height: 38 }} type="number" value={priceRange[0]} onChange={(e) => setPriceRange([+e.target.value, priceRange[1]])} />
-              <input className="input" style={{ height: 38 }} type="number" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], +e.target.value])} />
-            </div>
-            <input type="range" min="0" max="100" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], +e.target.value])} style={{ width: "100%", marginTop: 8 }} />
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={excludeAutoManage} onChange={(e) => setExcludeAutoManage(e.target.checked)} />
-            <span style={{ fontSize: 13, color: "var(--text-body)" }}>Exclude dari auto-management</span>
-          </label>
-          <button className="btn btn-primary" style={{ marginTop: 4 }}>Create position</button>
-        </div>
-      )}
-
-      {tab === "Limit Order" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Allocate</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Mode</span>
-            <select className="input" style={{ height: 38 }}><option>Single Price</option><option>Price Range</option></select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">Limit price</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
-          </label>
-          <button className="btn btn-primary" style={{ marginTop: 4 }}>Place limit order</button>
-        </div>
-      )}
-
-      {tab === "Swap" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">From amount</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="t-caption text-muted">To amount (estimasi)</span>
-            <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" disabled />
-          </label>
-          <p className="t-caption text-muted">Swap via 1 pool. Untuk harga terbaik lintas pool, gunakan Jupiter.</p>
-          <button className="btn btn-primary" style={{ marginTop: 4 }}>Swap</button>
-        </div>
-      )}
-    </div>
-  );
-}
+const POOL_PANEL_TABS = ["Create Position", "Positions", "Limit Order", "Swap"];
 
 function PoolPanel({ pool, onClose }) {
-  const [timeframe, setTimeframe] = useState("1h");
-  const [indicators, setIndicators] = useState({ bollinger: true, supertrend: false, fibo: false });
+  const [chartTimeframe, setChartTimeframe] = useState("1h");
+  const [indicators, setIndicators] = useState({ bollinger: false, supertrend: true, fibo: false });
+  const [activeTab, setActiveTab] = useState("Create Position");
   const candles = useMemo(() => generateMockOhlcv(60, pool?.price ?? 0.00042), [pool?.pool]);
   const rsi = useMemo(() => computeRsi(candles), [candles]);
 
@@ -150,7 +64,7 @@ function PoolPanel({ pool, onClose }) {
 
   return (
     <div style={{
-      width: 380, flexShrink: 0, borderLeft: "1px solid var(--hairline)",
+      width: 400, flexShrink: 0, borderLeft: "1px solid var(--hairline)",
       display: "flex", flexDirection: "column", overflowY: "auto",
       background: "var(--canvas)",
     }}>
@@ -163,12 +77,15 @@ function PoolPanel({ pool, onClose }) {
         <div>
           <div className="t-title-sm">{pool.name}</div>
           <div className="t-caption text-muted" style={{ marginTop: 2 }}>
-            Fee {pool.fee_pct}% · Bin step {pool.bin_step} · {pool.token_age_label}
+            Fee {pool.fee_pct}% · Bin step {pool.bin_step}
           </div>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>
-          <IconX size={18} stroke={1.75} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ConnectWalletButton />
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>
+            <IconX size={18} stroke={1.75} />
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -178,8 +95,8 @@ function PoolPanel({ pool, onClose }) {
           {[
             { label: "TVL", value: money(pool.tvl) },
             { label: "Volume (window)", value: money(pool.volume_window) },
-            { label: "Fee / TVL", value: `${pool.fee_active_tvl_ratio?.toFixed(2) ?? "—"}%` },
-            { label: "Organic score", value: pool.organic_score ?? pool.organicScore ?? "—" },
+            { label: "Fee / Active TVL", value: pool.fee_active_tvl_ratio != null ? `${(pool.fee_active_tvl_ratio * 100).toFixed(2)}%` : "—" },
+            { label: "Organic score", value: pool.organic_score ?? "—" },
           ].map(({ label, value }) => (
             <div key={label} style={{ background: "var(--surface-card)", borderRadius: "var(--radius-control)", padding: "8px 10px" }}>
               <div className="t-caption text-muted">{label}</div>
@@ -198,10 +115,10 @@ function PoolPanel({ pool, onClose }) {
           </div>
         )}
 
-        {/* Chart */}
+        {/* Chart (candlestick masih mock — OHLCV real butuh Birdeye/DexScreener) */}
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span className="t-body-sm" style={{ fontWeight: 500 }}>Chart</span>
+            <span className="t-body-sm" style={{ fontWeight: 500 }}>Chart <span className="t-caption text-muted">(simulasi)</span></span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {Object.keys(indicators).map((key) => (
                 <label key={key} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11 }} className="text-muted">
@@ -209,12 +126,7 @@ function PoolPanel({ pool, onClose }) {
                   {key}
                 </label>
               ))}
-              <select
-                className="input"
-                style={{ height: 28, fontSize: 12, padding: "0 6px", width: 52 }}
-                value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value)}
-              >
+              <select className="input" style={{ height: 28, fontSize: 12, padding: "0 6px", width: 52 }} value={chartTimeframe} onChange={(e) => setChartTimeframe(e.target.value)}>
                 {TIMEFRAMES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
@@ -222,35 +134,59 @@ function PoolPanel({ pool, onClose }) {
           <CandlestickChart candles={candles} indicators={indicators} />
           <div className="t-caption text-muted" style={{ marginTop: 6 }}>
             RSI(14): {rsi} · Volatility: {pool.volatility?.toFixed(1) ?? "—"}%
+            {pool.price != null && ` · Min bin: ${pool.price}`}
           </div>
         </div>
 
-        {/* Fee breakdown */}
-        <div style={{ display: "flex", gap: 12 }}>
-          {Object.entries(feeBreakdown).map(([k, v]) => (
-            <div key={k}>
-              <div className="t-caption text-muted" style={{ textTransform: "capitalize" }}>{k}</div>
-              <div className="t-code" style={{ fontSize: 12 }}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Liquidity distribution */}
-        <div>
-          <div className="t-caption text-muted" style={{ marginBottom: 6 }}>Liquidity distribution</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 48 }}>
-            {Array.from({ length: 24 }).map((_, i) => (
-              <div key={i} style={{
-                flex: 1, height: `${20 + Math.abs(Math.sin(i / 2)) * 40}%`, borderRadius: 2,
-                background: i >= 10 && i <= 14 ? "var(--primary-glow)" : "var(--surface-strong)",
-              }} />
+        {/* Tabs: Create Position / Positions / Limit Order / Swap */}
+        <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>
+          <div style={{ display: "flex", gap: 0, marginBottom: 14, borderBottom: "1px solid var(--hairline)" }}>
+            {POOL_PANEL_TABS.map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)} style={{
+                padding: "7px 12px", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                border: "none", background: "none",
+                color: activeTab === t ? "var(--text-primary)" : "var(--text-muted)",
+                borderBottom: `2px solid ${activeTab === t ? "var(--primary)" : "transparent"}`,
+                marginBottom: -1,
+                whiteSpace: "nowrap",
+              }}>{t}</button>
             ))}
           </div>
-        </div>
 
-        {/* Deploy form */}
-        <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>
-          <DeployForm pool={pool} />
+          {activeTab === "Create Position" && <CreatePositionPanel pool={pool} />}
+          {activeTab === "Positions" && <WalletPositions />}
+
+          {activeTab === "Limit Order" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="t-caption text-muted" style={{ padding: "12px", background: "rgba(255,171,0,0.06)", border: "1px solid rgba(255,171,0,0.2)", borderRadius: "var(--radius-control)" }}>
+                ⚠️ Limit Order membutuhkan wallet connect dan integrasi Meteora Limit Order SDK.
+              </div>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="t-caption text-muted">Allocate (SOL)</span>
+                <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="t-caption text-muted">Limit price</span>
+                <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
+              </label>
+              <ConnectWalletButton style={{ width: "100%" }} />
+            </div>
+          )}
+
+          {activeTab === "Swap" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="t-caption text-muted">From (SOL)</span>
+                <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="t-caption text-muted">To ({pool.base})</span>
+                <input className="input" style={{ height: 38 }} type="number" placeholder="0.0" disabled />
+              </label>
+              <p className="t-caption text-muted">Untuk swap lintas pool dengan harga terbaik, gunakan Jupiter.</p>
+              <ConnectWalletButton style={{ width: "100%" }} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -272,6 +208,13 @@ export default function Trade() {
   const [activeFilters, setActiveFilters] = useState({});
   const [{ order: columnOrder, visible: visibleColumns }, setColumnPrefs] = useState(loadColumnPrefs);
 
+  const apiCategory = CATEGORY_TABS.find((c) => c.label === category)?.apiValue ?? "trending";
+  const { data: poolData, loading: poolsLoading } = useApi(
+    () => api.pools({ category: apiCategory, timeframe, limit: 50 }),
+    [apiCategory, timeframe],
+  );
+  const allPools = poolData?.pools ?? [];
+
   const toggleFavorite = (pool) => setFavorites((prev) => {
     const next = new Set(prev);
     next.has(pool) ? next.delete(pool) : next.add(pool);
@@ -279,7 +222,7 @@ export default function Trade() {
     return next;
   });
 
-  const baseRows = category === "Favorites" ? poolBrowser.filter((p) => favorites.has(p.pool)) : poolBrowser;
+  const baseRows = category === "Favorites" ? allPools.filter((p) => favorites.has(p.pool)) : allPools;
 
   const rows = baseRows.filter((p) => {
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -407,6 +350,14 @@ export default function Trade() {
               </tr>
             </thead>
             <tbody>
+              {poolsLoading && (
+                <tr><td colSpan={10} className="t-body-sm text-muted" style={{ padding: 24, textAlign: "center" }}>Memuat pool dari Meteora API...</td></tr>
+              )}
+              {!poolsLoading && rows.length === 0 && (
+                <tr><td colSpan={10} className="t-body-sm text-muted" style={{ padding: 24, textAlign: "center" }}>
+                  {category === "Favorites" ? "Belum ada pool yang di-favorite." : "Tidak ada pool ditemukan."}
+                </td></tr>
+              )}
               {rows.map((p) => {
                 const isSelected = selectedPool?.pool === p.pool;
                 return (
@@ -441,7 +392,7 @@ export default function Trade() {
                     </td>
                     {!selectedPool && activeColumns.map((c) => (
                       <td key={c.key} style={{ padding: "12px 16px" }}>
-                        {c.sparkline ? <Sparkline points={p.priceTrend} /> : c.compute(p)}
+                        {c.sparkline ? <Sparkline points={p.priceTrend} /> : c.compute(p, timeframe)}
                         {c.key === "volume" && pct(p.volumeChangePct)}
                         {c.key === "fees" && pct(p.feesChangePct)}
                       </td>

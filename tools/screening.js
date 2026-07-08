@@ -834,3 +834,28 @@ function pushFilteredReason(list, pool, reason) {
     reason,
   });
 }
+
+/**
+ * Lightweight pool browser for the web dashboard.
+ * mode="recommended" applies basic TVL/fee-TVL filters; mode="all" returns raw top pools.
+ * Returns condensed pool objects (same shape as the LLM-facing candidate list).
+ */
+export async function browsePools({ mode = "recommended", limit = 30 } = {}) {
+  const discovery = await discoverPools({ page_size: Math.min(limit * 2, 100) });
+  let pools = discovery.pools || [];
+
+  if (mode === "recommended") {
+    const { config } = await import("../config.js");
+    const minTvl = Number(config.screening.minTvl ?? 0);
+    const minFeeActiveTvlRatio = Number(config.screening.minFeeActiveTvlRatio ?? 0);
+    pools = pools.filter((p) => {
+      const tvl = Number(p.tvl ?? p.active_tvl ?? 0);
+      if (minTvl > 0 && tvl < minTvl) return false;
+      const ratio = Number(p.fee_active_tvl_ratio);
+      if (minFeeActiveTvlRatio > 0 && (!Number.isFinite(ratio) || ratio < minFeeActiveTvlRatio)) return false;
+      return true;
+    });
+  }
+
+  return { pools: pools.slice(0, limit).map(condensePool) };
+}

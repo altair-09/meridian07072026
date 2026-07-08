@@ -2,10 +2,14 @@ import { useMemo, useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconArrowLeft, IconAlertTriangle } from "@tabler/icons-react";
 import CandlestickChart, { computeRsi } from "../components/CandlestickChart";
-import { poolBrowser, generateMockOhlcv } from "../mock/mockData";
+import { generateMockOhlcv } from "../mock/mockData";
+import { useApi } from "../hooks/useApi";
+import { api } from "../api";
+import ConnectWalletButton from "../components/ConnectWalletButton";
+import CreatePositionPanel from "../components/CreatePositionPanel";
+import WalletPositions from "../components/WalletPositions";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"];
-const DEPLOY_TABS = ["Create Position", "Limit Order", "Swap"];
 const CHART_TABS = ["Positions", "Limit Orders", "History"];
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -502,173 +506,71 @@ function MiddlePanel({ pool, candles }) {
           }}>{t}</button>
         ))}
       </div>
-      <div style={{ padding: "14px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, flexShrink: 0 }}>
-        <div style={{ fontSize: 28, opacity: 0.25 }}>⊘</div>
-        <div style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>No Wallet Connected</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Connect your wallet to view your {chartTab.toLowerCase()}</div>
+      <div style={{ padding: "14px", overflowY: "auto", maxHeight: 280 }}>
+        {chartTab === "Positions" ? (
+          <WalletPositions />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, paddingTop: 8 }}>
+            <div style={{ fontSize: 24, opacity: 0.2 }}>⊘</div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+              {chartTab === "Limit Orders" ? "Belum ada limit order" : "Belum ada history"}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Right panel ────────────────────────────────────────────────────────────────
+const RIGHT_TABS = ["Create Position", "Positions", "Limit Order", "Swap"];
+
 function RightPanel({ pool, width }) {
   const [tab, setTab] = useState("Create Position");
-  const [strategy, setStrategy] = useState("Spot");
-  const [autoFill, setAutoFill] = useState(true);
-  const [amtBase, setAmtBase] = useState("");
-  const [amtQuote, setAmtQuote] = useState("");
-  const [priceMin, setPriceMin] = useState(pool.min_price ?? 0);
-  const [priceMax, setPriceMax] = useState(pool.max_price ?? 1);
-  const [excludeManage, setExcludeManage] = useState(true);
-  const [limitPrice, setLimitPrice] = useState(pool.pool_price_sol ?? "");
-  const [limitMode, setLimitMode] = useState("Single Price");
 
   return (
     <div style={{ width, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-      <div style={{ display: "flex", borderBottom: "1px solid var(--hairline)" }}>
-        {DEPLOY_TABS.map((t) => (
+      {/* Connect Wallet button at top */}
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--hairline)", display: "flex", justifyContent: "flex-end" }}>
+        <ConnectWalletButton />
+      </div>
+
+      <div style={{ display: "flex", borderBottom: "1px solid var(--hairline)", overflowX: "auto" }}>
+        {RIGHT_TABS.map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: "11px 4px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
+            padding: "9px 10px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
             background: "none", color: tab === t ? "var(--primary-glow)" : "var(--text-muted)",
             borderBottom: tab === t ? "2px solid var(--primary-glow)" : "2px solid transparent",
+            whiteSpace: "nowrap",
           }}>{t}</button>
         ))}
       </div>
 
-      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
+      <div style={{ padding: 14, flex: 1, overflowY: "auto" }}>
+        {tab === "Create Position" && <CreatePositionPanel pool={pool} />}
 
-        {tab === "Create Position" && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Amount</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-                <span>Auto-Fill</span>
-                <div onClick={() => setAutoFill((v) => !v)} style={{ width: 32, height: 18, borderRadius: 9, background: autoFill ? "var(--primary-glow)" : "var(--surface-strong)", position: "relative", cursor: "pointer" }}>
-                  <div style={{ position: "absolute", top: 2, left: autoFill ? 16 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
-                </div>
-              </label>
-            </div>
-
-            {[{ token: pool.base, val: amtBase, set: setAmtBase }, { token: pool.quote, val: amtQuote, set: setAmtQuote }].map(({ token, val, set }) => (
-              <div key={token} style={{ background: "var(--surface-card-elevated)", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{token}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>0 | 50%</span>
-                </div>
-                <input type="number" placeholder="0.00" value={val} onChange={(e) => set(e.target.value)}
-                  style={{ width: "100%", background: "none", border: "none", fontSize: 18, fontWeight: 600, color: "var(--text-primary)", outline: "none" }} />
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>$0.00</div>
-              </div>
-            ))}
-
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 7 }}>Strategy</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["Spot", "Curve", "Bid Ask"].map((s) => (
-                  <button key={s} onClick={() => setStrategy(s)} style={{
-                    flex: 1, height: 34, fontSize: 11, fontWeight: 500, borderRadius: 6, cursor: "pointer",
-                    border: `1px solid ${strategy === s ? "var(--primary-glow)" : "var(--hairline-strong)"}`,
-                    background: strategy === s ? "rgba(26,38,255,0.15)" : "var(--surface-card-elevated)",
-                    color: strategy === s ? "var(--primary-glow)" : "var(--text-muted)",
-                  }}>{s}</button>
-                ))}
-              </div>
-            </div>
-
-            {/* Interactive price range slider */}
-            <PriceRangeSlider
-              pool={pool}
-              bins={pool.bins}
-              priceMin={priceMin}
-              priceMax={priceMax}
-              onChangeMin={setPriceMin}
-              onChangeMax={setPriceMax}
-              strategy={strategy}
-            />
-
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-              <input type="checkbox" checked={excludeManage} onChange={(e) => setExcludeManage(e.target.checked)} />
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Exclude dari auto-management</span>
-            </label>
-
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontWeight: 700 }}>Create Position</button>
-          </>
-        )}
+        {tab === "Positions" && <WalletPositions />}
 
         {tab === "Limit Order" && (
-          <>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Allocate</div>
-            <div style={{ background: "var(--surface-card-elevated)", borderRadius: 8, padding: "10px 12px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{pool.base}</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>0 | 50%</span>
-              </div>
-              <input type="number" placeholder="0.00" style={{ width: "100%", background: "none", border: "none", fontSize: 18, fontWeight: 600, color: "var(--text-primary)", outline: "none" }} />
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>$0.00</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, paddingTop: 24 }}>
+            <div className="t-body-sm text-muted" style={{ textAlign: "center" }}>
+              Limit Order memerlukan wallet terhubung
             </div>
-            <div style={{ textAlign: "center", color: "var(--text-muted)" }}>⇅</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>To Buy</div>
-            <div style={{ background: "var(--surface-card-elevated)", borderRadius: 8, padding: "10px 12px" }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{pool.quote}</span>
-              <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>0</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>$0.00</div>
+            <ConnectWalletButton />
+            <div className="t-caption text-muted" style={{ textAlign: "center", marginTop: 8 }}>
+              Fitur Limit Order via on-chain DLMM belum tersedia di UI ini.<br />
+              Gunakan Meteora app atau Meridian CLI.
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {["Single Price", "Price Range"].map((m) => (
-                <button key={m} onClick={() => setLimitMode(m)} style={{
-                  flex: 1, height: 34, fontSize: 11, borderRadius: 6, cursor: "pointer",
-                  border: "1px solid var(--hairline-strong)",
-                  background: limitMode === m ? "var(--surface-strong)" : "var(--surface-card-elevated)",
-                  color: limitMode === m ? "var(--text-primary)" : "var(--text-muted)",
-                  fontWeight: limitMode === m ? 600 : 400,
-                }}>{m}</button>
-              ))}
-            </div>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Limit Order Price</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>SOL/{pool.base}</span>
-              </div>
-              <div style={{ background: "var(--surface-card-elevated)", borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <input type="number" value={limitPrice} onChange={(e) => setLimitPrice(e.target.value)}
-                  style={{ background: "none", border: "none", fontSize: 15, fontWeight: 600, color: "var(--text-primary)", outline: "none", width: "60%" }} />
-                <span style={{ fontSize: 12, color: "var(--success)" }}>+9.37%</span>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                Market Price: {pool.pool_price_sol} SOL/{pool.base}
-              </div>
-            </div>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontWeight: 700, marginTop: "auto" }}>Create Limit Order</button>
-          </>
+          </div>
         )}
 
         {tab === "Swap" && (
-          <>
-            <div style={{ background: "rgba(26,38,255,0.08)", border: "1px solid rgba(26,38,255,0.2)", borderRadius: 8, padding: "10px 12px" }}>
-              <div style={{ fontSize: 12, color: "var(--primary-glow)", fontWeight: 600, marginBottom: 4 }}>
-                ✦ Current Price on Jupiter: 1 {pool.base} ≈ {pool.pool_price_sol} SOL
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                This swap uses a single liquidity pool. For potentially better prices across multiple pools, check Jupiter.
-              </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, paddingTop: 24 }}>
+            <div className="t-caption" style={{ background: "rgba(26,38,255,0.08)", border: "1px solid rgba(26,38,255,0.2)", borderRadius: 8, padding: "10px 12px", textAlign: "center", color: "var(--primary-glow)" }}>
+              Swap terbaik via Jupiter — gunakan Meridian CLI: <code>node cli.js swap</code>
             </div>
-            {[pool.base, pool.quote].map((token, idx) => (
-              <div key={token} style={{ background: "var(--surface-card-elevated)", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{token}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>0 | 50%</span>
-                </div>
-                <input type="number" placeholder="0.00" disabled={idx === 1}
-                  style={{ width: "100%", background: "none", border: "none", fontSize: 18, fontWeight: 600, color: idx === 1 ? "var(--text-muted)" : "var(--text-primary)", outline: "none" }} />
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>$0.00</div>
-              </div>
-            ))}
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <button style={{ background: "none", border: "1px solid var(--hairline-strong)", borderRadius: 6, width: 32, height: 32, cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }}>⇅</button>
-            </div>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontWeight: 700 }}>Swap</button>
-          </>
+            <ConnectWalletButton />
+          </div>
         )}
       </div>
     </div>
@@ -684,12 +586,21 @@ const MAX_RIGHT = 480;
 export default function PoolDetail() {
   const { rank } = useParams();
   const navigate = useNavigate();
-  const pool = poolBrowser.find((p) => String(p.rank) === rank);
+
+  // Load real pool list from API, find by rank
+  const { data: poolData, loading: poolsLoading } = useApi(
+    () => api.pools({ category: "top", timeframe: "12h", limit: 50 }),
+    [],
+  );
+  const pool = (poolData?.pools ?? []).find((p) => String(p.rank) === rank);
   const candles = useMemo(() => generateMockOhlcv(80, pool?.price ?? 0.00042), [pool?.pool]);
 
   const [leftW, setLeftW] = useState(270);
   const [rightW, setRightW] = useState(320);
 
+  if (poolsLoading) {
+    return <div style={{ padding: 32 }}><p className="t-body-sm text-muted">Memuat pool...</p></div>;
+  }
   if (!pool) {
     return (
       <div style={{ padding: 32 }}>

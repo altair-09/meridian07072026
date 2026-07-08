@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { IconChevronDown, IconPlus, IconRefresh, IconFileExport, IconPlayerPause, IconAlertTriangle, IconFlask } from "@tabler/icons-react";
-import { bots, walletsByBot, lessonApprovalQueue, recentActivity, dashboardStats, paperConfig, paperLedger, dryRunLessons } from "../mock/mockData";
 import Sparkline from "../components/Sparkline";
 import { useChatContext } from "../context/ChatContext";
+import { useApi } from "../hooks/useApi";
+import { useServerEvents } from "../hooks/useServerEvents";
+import { api } from "../api";
 
 const TIMEFRAMES = ["Last 24 hours", "Last 7 days", "Last 30 days"];
-
-// ── helpers ────────────────────────────────────────────────────────────────────
+const TIMEFRAME_HOURS = { "Last 24 hours": 24, "Last 7 days": 168, "Last 30 days": 720 };
 
 function fmtUsd(n) {
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(1)}K`;
@@ -40,7 +41,6 @@ function StatCard({ label, value, valueColor, sub, trend }) {
   );
 }
 
-// Generic dropdown used for scope & timeframe
 function Dropdown({ value, onChange, options }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -79,10 +79,9 @@ function Dropdown({ value, onChange, options }) {
   );
 }
 
-// Quick actions — the "..." menu
 function QuickActions() {
   const [open, setOpen] = useState(false);
-  const [confirm, setConfirm] = useState(null); // "pause" | "emergency"
+  const [confirm, setConfirm] = useState(null);
   const ref = useRef(null);
   useEffect(() => {
     function close(e) { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setConfirm(null); } }
@@ -94,9 +93,11 @@ function QuickActions() {
     if (key === "refresh") { setOpen(false); window.location.reload(); return; }
     if (key === "export") {
       setOpen(false);
-      const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), note: "mock export" }, null, 2)], { type: "application/json" });
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-      a.download = `meridian-export-${Date.now()}.json`; a.click();
+      fetch("/api/positions").then((r) => r.json()).then((d) => {
+        const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), data: d }, null, 2)], { type: "application/json" });
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = `meridian-export-${Date.now()}.json`; a.click();
+      }).catch(() => {});
       return;
     }
     setConfirm(key);
@@ -131,10 +132,10 @@ function QuickActions() {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-secondary" style={{ flex: 1, height: 32, fontSize: 13 }} onClick={() => { setOpen(false); setConfirm(null); }}>Batal</button>
-                <button
-                  style={{ flex: 1, height: 32, fontSize: 13, background: "var(--error)", color: "#fff", border: "none", borderRadius: "var(--radius-control)", cursor: "pointer", fontWeight: 600 }}
-                  onClick={() => { alert("[mock] " + (confirm === "pause" ? "Semua bot di-pause." : "Emergency close dikirim.")); setOpen(false); setConfirm(null); }}
-                >Konfirmasi</button>
+                <button style={{ flex: 1, height: 32, fontSize: 13, background: "var(--error)", color: "#fff", border: "none", borderRadius: "var(--radius-control)", cursor: "pointer", fontWeight: 600 }}
+                  onClick={() => { alert("Fitur ini memerlukan koneksi ke Meridian bot yang sedang berjalan."); setOpen(false); setConfirm(null); }}>
+                  Konfirmasi
+                </button>
               </div>
             </div>
           )}
@@ -158,101 +159,140 @@ function MenuItem({ icon, label, danger, onClick }) {
 
 const RESULT_COLORS = { success: "var(--success)", error: "var(--error)", neutral: "var(--text-muted)" };
 
-// ── main ───────────────────────────────────────────────────────────────────────
+function deriveResultType(d) {
+  if (d.type === "deploy") return "success";
+  if (d.type === "close") return d.summary?.includes("loss") || d.summary?.includes("stop") ? "error" : "success";
+  if (d.type === "no_deploy") return "neutral";
+  return "neutral";
+}
 
 export default function Dashboard() {
-  const [scope, setScope] = useState("All bots");
   const [timeframe, setTimeframe] = useState("Last 24 hours");
   const { injectMessage } = useChatContext();
 
-  // Derive which bots are in scope
-  const scopedBots = scope === "All bots" ? bots : bots.filter((b) => b.name === scope);
-  const trendKey = scope === "All bots" ? "all" : (scopedBots[0]?.id ?? "all");
+  const { data: systemData } = useApi(api.system, [], 30_000);
+  const { data: walletData,    reload: reloadWallet    } = useApi(api.wallet, [], 30_000);
+  const { data: perfData,      reload: reloadPerf      } = useApi(api.performance, [], 30_000);
+  const { data: decisionsData, reload: reloadDecisions } = useApi(() => api.decisions(20), [], 30_000);
+  const { data: pendingData,   reload: reloadLessons   } = useApi(api.lessonsPending, [], 30_000);
+  const { data: simData } = useApi(api.sim);
 
-  // Stats come from the lookup table — both scope AND timeframe matter
-  const stats = dashboardStats[trendKey]?.[timeframe] ?? dashboardStats.all["Last 24 hours"];
+  // SSE: instant push from backend when bot writes to JSON files
+  useServerEvents({
+    decision_log_changed: () => { reloadDecisions(); reloadWallet(); },
+    lessons_changed:      () => { reloadLessons(); reloadPerf(); },
+    state_changed:        () => { reloadWallet(); reloadPerf(); },
+  });
 
-  // Total wallet value is always current (not period-dependent)
-  const totalValue = scopedBots.reduce((s, b) => s + (walletsByBot[b.id]?.totalValueUsd ?? 0), 0);
+  const hours = TIMEFRAME_HOURS[timeframe];
+  const cutoff = Date.now() - hours * 3600_000;
+  const perf = perfData?.performance ?? [];
+  const perfInWindow = perf.filter((p) => p.closed_at ? new Date(p.closed_at).getTime() > cutoff : true);
 
-  // Activity filtered by scope, most recent first
-  const scopedActivity = scope === "All bots"
-    ? recentActivity
-    : recentActivity.filter((a) => a.botId === scopedBots[0]?.id);
+  const totalClosed = perfInWindow.length;
+  const wins = perfInWindow.filter((p) => p.pnl_pct > 0).length;
+  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "—";
+  const netPnl = perfInWindow.reduce((s, p) => s + (p.pnl_usd ?? 0), 0);
+  const totalFees = perfInWindow.reduce((s, p) => s + (p.fees_earned_usd ?? 0), 0);
 
-  const pendingLessons = lessonApprovalQueue.filter((l) => l.status === "pending");
+  const pnlTrend = perfData?.pnlTrend ?? [];
+  const feeTrend = perfData?.feeTrend ?? [];
+
+  const botStatus = systemData?.status ?? "running";
+  const dryRun = systemData?.dry_run ?? false;
+  const openPositions = systemData?.open_positions ?? 0;
+
+  const bot = {
+    id: "meridian",
+    name: systemData?.agent_id ?? "Meridian Bot",
+    status: botStatus,
+    dryRun,
+    allTimePnlUsd: perf.reduce((s, p) => s + (p.pnl_usd ?? 0), 0),
+  };
+
+  const totalValueUsd = walletData?.total_usd ?? 0;
+
+  const decisions = decisionsData?.decisions ?? [];
+  const activity = decisions.map((d) => ({
+    time: d.ts ? new Date(d.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—",
+    bot: "Meridian",
+    pool: d.pool ? d.pool.slice(0, 8) + "…" : "—",
+    event: d.summary ?? d.type,
+    result: d.type === "deploy" ? `+${(d.metrics?.amount_sol ?? 0)} SOL` : d.type === "close" ? `${(d.metrics?.pnl_pct ?? 0).toFixed(1)}%` : d.type,
+    resultType: deriveResultType(d),
+    raw: d,
+  }));
+
+  const pendingLessons = pendingData?.pending ?? [];
+  const simEnabled = simData?.config?.enabled ?? false;
+  const pendingDryRun = (simData?.review ?? []).filter((l) => l.status === "pending").length;
 
   function handleActivityClick(a) {
-    const target = a.botId ?? "orchestrator";
     injectMessage(
-      `Jelaskan event ini: "${a.event}" (pool ${a.pool}, pukul ${a.time}, ${a.bot}). Apa yang terjadi dan apakah ada tindakan lanjutan yang perlu diambil?`,
-      target,
+      `Jelaskan event ini: "${a.event}" (pool ${a.pool}). Apa yang terjadi dan apakah ada tindakan lanjutan yang perlu diambil?`,
+      "orchestrator",
     );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 className="t-display-sm" style={{ flex: 1 }}>Dashboard</h1>
-        <Dropdown value={scope} onChange={setScope} options={["All bots", ...bots.map((b) => b.name)]} />
         <Dropdown value={timeframe} onChange={setTimeframe} options={TIMEFRAMES} />
         <QuickActions />
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--space-4)" }}>
-        <StatCard label={`Total value (${scopedBots.length} bot)`} value={fmtUsd(totalValue)} />
+        <StatCard label="Total wallet" value={fmtUsd(totalValueUsd)} sub={`${openPositions} posisi aktif`} />
         <StatCard
           label={`Net PnL (${timeframe.toLowerCase()})`}
-          value={`${stats.netPnl >= 0 ? "+" : ""}${fmtUsd(stats.netPnl)}`}
-          valueColor={stats.netPnl >= 0 ? "var(--success)" : "var(--error)"}
-          sub={stats.netPnl >= 0 ? "Profit period ini" : "Loss period ini"}
-          trend={stats.pnlTrend}
+          value={`${netPnl >= 0 ? "+" : ""}${fmtUsd(netPnl)}`}
+          valueColor={netPnl >= 0 ? "var(--success)" : "var(--error)"}
+          sub={netPnl >= 0 ? "Profit period ini" : "Loss period ini"}
+          trend={pnlTrend}
         />
-        <StatCard
-          label={`Fees earned (${timeframe.toLowerCase()})`}
-          value={fmtUsd(stats.fees)}
-          trend={stats.feeTrend}
-        />
+        <StatCard label={`Fees earned (${timeframe.toLowerCase()})`} value={fmtUsd(totalFees)} trend={feeTrend} />
         <StatCard
           label={`Win rate (${timeframe.toLowerCase()})`}
-          value={stats.trades > 0 ? `${stats.winRate}%` : "—"}
-          sub={stats.trades > 0 ? `${stats.trades} posisi ditutup` : "Belum ada trade"}
+          value={winRate !== "—" ? `${winRate}%` : "—"}
+          sub={totalClosed > 0 ? `${totalClosed} posisi ditutup` : "Belum ada trade"}
         />
       </div>
 
-      {/* ── Bots + Lessons ── */}
+      {/* Bot + Lessons */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
-
-        {/* Bots card */}
+        {/* Bot card */}
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span className="t-title-sm">Bots</span>
-            <button className="btn btn-secondary" style={{ height: 32, fontSize: 13, gap: 4 }} disabled title="Slot penuh">
+            <span className="t-title-sm">Bot</span>
+            <button className="btn btn-secondary" style={{ height: 32, fontSize: 13, gap: 4 }} disabled title="Single instance">
               <IconPlus size={14} stroke={2} /> Add bot
             </button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {scopedBots.map((b) => {
-              const pnl = b.allTimePnlUsd;
-              return (
-                <div key={b.id} style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  background: "var(--surface-card-elevated)", borderRadius: "var(--radius-control)", padding: "10px 14px",
-                }}>
-                  <BotStatusDot status={b.status} dryRun={b.dryRun} />
-                  <span className="t-body-sm" style={{ flex: 1, fontWeight: 500 }}>{b.name}</span>
-                  {b.dryRun
-                    ? <span className="t-caption" style={{ color: "var(--text-muted)" }}>dry run</span>
-                    : <span className="t-body-sm" style={{ fontWeight: 600, color: pnl >= 0 ? "var(--success)" : "var(--error)" }}>
-                        {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
-                      </span>
-                  }
-                </div>
-              );
-            })}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              background: "var(--surface-card-elevated)", borderRadius: "var(--radius-control)", padding: "10px 14px",
+            }}>
+              <BotStatusDot status={bot.status} dryRun={bot.dryRun} />
+              <span className="t-body-sm" style={{ flex: 1, fontWeight: 500 }}>{bot.name}</span>
+              {bot.dryRun
+                ? <span className="t-caption" style={{ color: "var(--text-muted)" }}>dry run</span>
+                : <span className="t-body-sm" style={{ fontWeight: 600, color: bot.allTimePnlUsd >= 0 ? "var(--success)" : "var(--error)" }}>
+                    {bot.allTimePnlUsd >= 0 ? "+" : ""}${bot.allTimePnlUsd.toFixed(2)}
+                  </span>
+              }
+            </div>
+            {systemData && (
+              <div className="t-caption text-muted" style={{ paddingLeft: 4 }}>
+                {systemData.uptime_hours != null ? `Uptime: ${systemData.uptime_hours}h` : ""}
+                {systemData.model ? ` · Model: ${systemData.model}` : ""}
+                {walletData ? ` · ${(walletData.sol ?? 0).toFixed(3)} SOL` : ""}
+              </div>
+            )}
           </div>
           <Link to="/bot-manager" className="t-body-sm" style={{ color: "var(--text-muted)", textDecoration: "none", marginTop: "auto" }}>
             Kelola bot →
@@ -266,11 +306,11 @@ export default function Dashboard() {
             {pendingLessons.length > 0 && <span className="badge badge-warning">{pendingLessons.length}</span>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
-            {pendingLessons.slice(0, 3).map((l) => (
-              <div key={l.id} style={{ borderLeft: "3px solid var(--primary-glow)", paddingLeft: 12 }}>
-                <div className="t-body-sm" style={{ fontWeight: 600 }}>{l.title}</div>
+            {pendingLessons.slice(0, 3).map((l, i) => (
+              <div key={l.id ?? i} style={{ borderLeft: "3px solid var(--primary-glow)", paddingLeft: 12 }}>
+                <div className="t-body-sm" style={{ fontWeight: 600 }}>{l.rule ?? l.title ?? "(no rule)"}</div>
                 <div className="t-caption text-muted" style={{ marginTop: 3 }}>
-                  {l.context.split("—")[0].trim()}
+                  {l.tags?.join(", ")}
                 </div>
               </div>
             ))}
@@ -282,61 +322,45 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Paper Trading section (visible if any bot has paper mode active) ── */}
-      {(() => {
-        const paperBots = bots.filter((b) => paperConfig[b.id]?.paperTradingEnabled);
-        if (paperBots.length === 0) return null;
-        const pendingDryRun = dryRunLessons.filter((l) => l.status === "pending").length;
-        return (
-          <div className="card" style={{ border: "1px solid rgba(249,115,22,0.35)", display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <IconFlask size={16} stroke={2} style={{ color: "#f97316", flexShrink: 0 }} />
-              <span className="t-title-sm" style={{ color: "#f97316" }}>Paper Trading</span>
-              <span className="t-caption text-muted">— simulasi, bukan transaksi real</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-3)" }}>
-              {paperBots.map((b) => {
-                const pc = paperConfig[b.id];
-                const ledger = paperLedger[b.id];
-                const summary = ledger?.summary ?? {};
-                const openTrades = ledger?.trades.filter((t) => t.isOpen) ?? [];
-                const pnlColor = (summary.totalNetPnLUSD ?? 0) >= 0 ? "var(--success)" : "var(--error)";
-                return (
-                  <div key={b.id} style={{ background: "var(--surface-card-elevated)", borderRadius: "var(--radius-control)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="t-body-sm" style={{ fontWeight: 600 }}>{b.name}</div>
-                    <div className="t-caption text-muted">
-                      Virtual balance: {pc.currentVirtualBalanceSOL ?? pc.virtualBalanceSOL} SOL
-                    </div>
-                    <div style={{ color: pnlColor, fontWeight: 600, fontSize: 16 }}>
-                      {(summary.totalNetPnLUSD ?? 0) >= 0 ? "+" : ""}${(summary.totalNetPnLUSD ?? 0).toFixed(2)}
-                    </div>
-                    <div className="t-caption text-muted">
-                      {summary.winCount ?? 0}W / {summary.lossCount ?? 0}L &middot; {openTrades.length} posisi aktif
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div className="t-caption text-muted" style={{ fontStyle: "italic" }}>
-                PnL adalah simulasi — fee dan IL dihitung dari estimasi dashboard.
+      {/* Paper Trading section (if sim enabled) */}
+      {simEnabled && (
+        <div className="card" style={{ border: "1px solid rgba(249,115,22,0.35)", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <IconFlask size={16} stroke={2} style={{ color: "#f97316", flexShrink: 0 }} />
+            <span className="t-title-sm" style={{ color: "#f97316" }}>Paper Trading</span>
+            <span className="t-caption text-muted">— simulasi, bukan transaksi real</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-3)" }}>
+            <div style={{ background: "var(--surface-card-elevated)", borderRadius: "var(--radius-control)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="t-body-sm" style={{ fontWeight: 600 }}>Meridian Bot (Paper)</div>
+              <div className="t-caption text-muted">Virtual balance: {simData?.config?.virtualBalanceSOL ?? "—"} SOL</div>
+              <div style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: 16 }}>
+                {simData?.summary ? `${(simData.summary.totalNetPnLUSD ?? 0) >= 0 ? "+" : ""}$${(simData.summary.totalNetPnLUSD ?? 0).toFixed(2)}` : "—"}
               </div>
-              <Link to="/insights" style={{ textDecoration: "none" }}>
-                <button className="btn btn-secondary" style={{ height: 30, fontSize: 13, gap: 6 }}>
-                  {pendingDryRun > 0 && (
-                    <span style={{ minWidth: 16, height: 16, borderRadius: 8, background: "#f97316", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
-                      {pendingDryRun}
-                    </span>
-                  )}
-                  Review dry run lessons ↗
-                </button>
-              </Link>
+              <div className="t-caption text-muted">
+                {simData?.summary ? `${simData.summary.winCount ?? 0}W / ${simData.summary.lossCount ?? 0}L` : "Belum ada data"}
+              </div>
             </div>
           </div>
-        );
-      })()}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="t-caption text-muted" style={{ fontStyle: "italic" }}>
+              PnL adalah simulasi — fee dan IL dihitung dari estimasi dashboard.
+            </div>
+            <Link to="/insights" style={{ textDecoration: "none" }}>
+              <button className="btn btn-secondary" style={{ height: 30, fontSize: 13, gap: 6 }}>
+                {pendingDryRun > 0 && (
+                  <span style={{ minWidth: 16, height: 16, borderRadius: 8, background: "#f97316", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
+                    {pendingDryRun}
+                  </span>
+                )}
+                Review dry run lessons ↗
+              </button>
+            </Link>
+          </div>
+        </div>
+      )}
 
-      {/* ── Recent activity ── */}
+      {/* Recent activity */}
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <span className="t-title-sm">Recent activity</span>
@@ -354,7 +378,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {scopedActivity.map((a, i) => (
+            {activity.map((a, i) => (
               <tr key={i} onClick={() => handleActivityClick(a)}
                 style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }} className="data-row">
                 <td className="t-code text-muted" style={{ padding: "11px 16px 11px 0" }}>{a.time}</td>
@@ -366,9 +390,9 @@ export default function Dashboard() {
                 </td>
               </tr>
             ))}
-            {scopedActivity.length === 0 && (
+            {activity.length === 0 && (
               <tr><td colSpan={5} className="t-body-sm text-muted" style={{ padding: "16px 0" }}>
-                Tidak ada aktivitas untuk {scope}.
+                Belum ada aktivitas.
               </td></tr>
             )}
           </tbody>

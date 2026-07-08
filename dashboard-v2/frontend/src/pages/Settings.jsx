@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import BotSelector from "../components/BotSelector";
 import InfoDot from "../components/InfoDot";
 import { configHelp } from "../mock/configHelp";
+import { api, apiFetch } from "../api";
 
 // ── Default config matching user-config.example.json ──────────────────────────
 const DEFAULT_CONFIG = {
@@ -252,16 +253,35 @@ export default function Settings() {
   const [bot, setBot] = useState("bot-1");
   const [cfg, setCfg] = useState(DEFAULT_CONFIG);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.config().then((data) => {
+      if (data && typeof data === "object") {
+        setCfg((prev) => ({ ...prev, ...data }));
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
 
   const set = (key) => (val) => {
     setCfg((prev) => ({ ...prev, [key]: val }));
     setSaved(false);
+    setSaveError(null);
   };
 
-  function handleSave() {
-    // Mock save — in real version POST to backend
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  async function handleSave() {
+    setSaveError(null);
+    try {
+      await apiFetch("/api/config", {
+        method: "POST",
+        body: JSON.stringify(cfg),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setSaveError(e.message);
+    }
   }
 
   return (
@@ -634,12 +654,13 @@ export default function Settings() {
       </SectionCard>
 
       {/* ── Save ── */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <button className="btn btn-primary" style={{ minWidth: 100 }} onClick={handleSave}>
-          {saved ? "✓ Tersimpan" : "Simpan"}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="btn btn-primary" style={{ minWidth: 100 }} onClick={handleSave} disabled={loading}>
+          {loading ? "Memuat..." : saved ? "✓ Tersimpan" : "Simpan"}
         </button>
         <button className="btn btn-secondary">Restart bot</button>
-        <span className="t-caption text-muted">Config tidak live-apply — restart PM2 wajib setelah save.</span>
+        {saveError && <span className="t-caption" style={{ color: "var(--error)" }}>Gagal: {saveError}</span>}
+        {!saveError && <span className="t-caption text-muted">Config tidak live-apply — restart PM2 wajib setelah save.</span>}
       </div>
     </div>
   );

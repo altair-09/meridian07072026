@@ -36,6 +36,7 @@ import { bootstrapHiveMind, ensureAgentId, getHiveMindPullMode, isHiveMindEnable
 import { appendDecision } from "./decision-log.js";
 
 import { REPO_ROOT, repoPath } from "./repo-root.js";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -2029,4 +2030,50 @@ Focus on: hold duration, entry/exit timing, what win rates look like, whether sc
       log("startup_error", e.message);
     }
   })();
+}
+
+// ═══════════════════════════════════════════
+//  DASHBOARD CHAT RELAY (file-based IPC)
+//  Polls .dashboard-chat-in.json every 1s.
+//  Responds via .dashboard-chat-out.json.
+// ═══════════════════════════════════════════
+if (isMain) {
+  const DASH_CHAT_IN  = repoPath(".dashboard-chat-in.json");
+  const DASH_CHAT_OUT = repoPath(".dashboard-chat-out.json");
+  let _lastChatId = null;
+  let _chatBusy = false;
+
+  setInterval(async () => {
+    if (_chatBusy) return;
+    try {
+      if (!existsSync(DASH_CHAT_IN)) return;
+      const raw = readFileSync(DASH_CHAT_IN, "utf8");
+      const req = JSON.parse(raw);
+      if (!req.id || req.id === _lastChatId) return;
+      _lastChatId = req.id;
+
+      if (_managementBusy || _screeningBusy || busy) {
+        writeFileSync(DASH_CHAT_OUT, JSON.stringify({ id: req.id, status: "busy", content: "Bot sedang sibuk dengan siklus manajemen/screening. Coba lagi dalam beberapa detik.", ts: Date.now() }));
+        return;
+      }
+
+      _chatBusy = true;
+      writeFileSync(DASH_CHAT_OUT, JSON.stringify({ id: req.id, status: "processing", ts: Date.now() }));
+
+      const text = String(req.text || "").slice(0, 2000);
+      const hasCloseIntent = /\bclose\b|\bsell\b|\bexit\b/i.test(text);
+      const isDeployRequest = !hasCloseIntent && /\bdeploy\b|\bopen position\b/i.test(text);
+      const agentRole = isDeployRequest ? "SCREENER" : "GENERAL";
+      const agentModel = agentRole === "SCREENER" ? config.llm.screeningModel : config.llm.generalModel;
+
+      const { content } = await agentLoop(text, config.llm.maxSteps, sessionHistory, agentRole, agentModel, null, { interactive: true });
+      appendHistory(text, content);
+
+      writeFileSync(DASH_CHAT_OUT, JSON.stringify({ id: req.id, status: "done", content: stripThink(content), ts: Date.now() }));
+    } catch (e) {
+      try { writeFileSync(DASH_CHAT_OUT, JSON.stringify({ id: _lastChatId, status: "error", content: `Error: ${e.message}`, ts: Date.now() })); } catch { }
+    } finally {
+      _chatBusy = false;
+    }
+  }, 1000);
 }

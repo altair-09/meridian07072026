@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { IconChevronDown } from "@tabler/icons-react";
-import { chatHistoryByTarget, bots } from "../mock/mockData";
 import { useChatContext } from "../context/ChatContext";
 
-const TARGETS = [...bots.map((b) => ({ id: b.id, label: b.name })), { id: "orchestrator", label: "Orchestrator" }];
+const MERIDIAN_TARGET = { id: "meridian", label: "Meridian AI" };
+const TARGETS = [MERIDIAN_TARGET, { id: "orchestrator", label: "Orchestrator (soon)" }];
 
 function BotSelect({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -58,9 +58,11 @@ function BotSelect({ value, onChange }) {
 }
 
 export default function ChatPanel() {
-  const [target, setTarget] = useState(TARGETS[0].id);
+  const [target, setTarget] = useState(MERIDIAN_TARGET.id);
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState(() => ({ ...chatHistoryByTarget }));
+  const [messages, setMessages] = useState([]);
+  const [pendingId, setPendingId] = useState(null); // chat request ID awaiting SSE response
+  const timeoutRef = useRef(null);
   const inputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const { pendingMessage, consumePending } = useChatContext();
@@ -69,39 +71,100 @@ export default function ChatPanel() {
   useEffect(() => {
     if (!pendingMessage) return;
     const { text, target: newTarget } = consumePending();
-    setTarget(newTarget);
+    setTarget(newTarget || MERIDIAN_TARGET.id);
     setInput(text);
-    // Focus the input so user sees the pre-filled message
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [pendingMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [history, target]);
+  }, [messages]);
 
-  const messages = history[target] || [];
+  // SSE listener for chat responses
+  useEffect(() => {
+    let es; let dead = false; let retryTimer;
+    function connect() {
+      if (dead) return;
+      es = new EventSource("/api/events");
+      es.addEventListener("chat_response", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.status === "done" || data.status === "error" || data.status === "busy") {
+            setPendingId((cur) => {
+              if (cur !== data.id) return cur; // not our request
+              clearTimeout(timeoutRef.current); timeoutRef.current = null;
+              setMessages((prev) => {
+                const withoutThinking = prev.filter((m) => m._thinking !== true);
+                return [...withoutThinking, {
+                  role: "assistant",
+                  content: data.content || "Bot tidak merespons.",
+                }];
+              });
+              return null;
+            });
+          }
+        } catch { /* ignore parse errors */ }
+      });
+      es.onerror = () => { es.close(); if (!dead) retryTimer = setTimeout(connect, 3000); };
+    }
+    connect();
+    return () => { dead = true; clearTimeout(retryTimer); es?.close(); };
+  }, []);
 
-  function handleSubmit(e) {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    if (!text || pendingId) return;
 
     const userMsg = { role: "user", content: text };
-    // Stub bot reply — in production this calls the backend
-    const botReply = {
-      role: "assistant",
-      content: `[mock] Menerima pesan untuk ${TARGETS.find((t) => t.id === target)?.label}: "${text}"`,
-      tokens: Math.floor(Math.random() * 400 + 100),
-      costUsd: +(Math.random() * 0.003 + 0.001).toFixed(4),
-    };
-
-    setHistory((prev) => ({
-      ...prev,
-      [target]: [...(prev[target] || []), userMsg, botReply],
-    }));
+    const thinkingMsg = { role: "assistant", content: "⏳ Berpikir...", _thinking: true };
+    setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setInput("");
-  }
+
+    if (target !== MERIDIAN_TARGET.id) {
+      // Non-Meridian targets not yet implemented
+      setMessages((prev) => {
+        const withoutThinking = prev.filter((m) => m._thinking !== true);
+        return [...withoutThinking, { role: "assistant", content: "Target ini belum tersedia. Pilih Meridian AI untuk komunikasi nyata dengan bot." }];
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal mengirim pesan");
+      setPendingId(data.id);
+
+      // Timeout: if bot doesn't respond in 60s, show error
+      timeoutRef.current = setTimeout(() => {
+        setPendingId((cur) => {
+          if (cur !== data.id) return cur;
+          setMessages((prev) => {
+            const withoutThinking = prev.filter((m) => m._thinking !== true);
+            return [...withoutThinking, {
+              role: "assistant",
+              content: "⏱️ Bot tidak merespons dalam 60 detik. Pastikan Meridian sedang berjalan (`node index.js`).",
+            }];
+          });
+          return null;
+        });
+      }, 60_000);
+    } catch (err) {
+      clearTimeout(timeoutRef.current); timeoutRef.current = null;
+      setMessages((prev) => {
+        const withoutThinking = prev.filter((m) => m._thinking !== true);
+        return [...withoutThinking, { role: "assistant", content: `Error: ${err.message}` }];
+      });
+    }
+  }, [input, pendingId, target]);
+
+  const isSending = !!pendingId;
 
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", height: 420 }}>
@@ -112,7 +175,11 @@ export default function ChatPanel() {
 
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         {messages.length === 0 && (
-          <div className="t-body-sm text-muted">Belum ada percakapan.</div>
+          <div className="t-body-sm text-muted">
+            {target === MERIDIAN_TARGET.id
+              ? "Tanya Meridian AI tentang posisi, kandidat pool, atau strategi LP."
+              : "Target ini belum tersedia."}
+          </div>
         )}
         {messages.map((m, i) => (
           <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
@@ -122,14 +189,12 @@ export default function ChatPanel() {
                 maxWidth: "85%", borderRadius: "var(--radius-card)", padding: "8px 12px",
                 background: m.role === "user" ? "rgba(0, 7, 205, 0.15)" : "var(--surface-card-elevated)",
                 border: m.role === "user" ? "1px solid var(--primary)" : "none",
+                opacity: m._thinking ? 0.6 : 1,
+                fontStyle: m._thinking ? "italic" : "normal",
+                whiteSpace: "pre-wrap",
               }}
             >
-              <div>{m.content}</div>
-              {m.role === "assistant" && (
-                <div className="t-caption text-muted" style={{ marginTop: 4 }}>
-                  {m.tokens} token &middot; ${m.costUsd.toFixed(4)}
-                </div>
-              )}
+              {m.content}
             </div>
           </div>
         ))}
@@ -144,11 +209,14 @@ export default function ChatPanel() {
           ref={inputRef}
           className="input"
           style={{ flex: 1 }}
-          placeholder="Tanya bot..."
+          placeholder={isSending ? "Menunggu respons bot..." : "Tanya Meridian AI..."}
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          disabled={isSending}
         />
-        <button className="btn btn-primary" type="submit" disabled={!input.trim()}>Kirim</button>
+        <button className="btn btn-primary" type="submit" disabled={!input.trim() || isSending}>
+          {isSending ? "..." : "Kirim"}
+        </button>
       </form>
     </div>
   );

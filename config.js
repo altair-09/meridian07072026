@@ -249,6 +249,14 @@ export const config = {
     ),
   },
 
+  // ─── Simulation / A/B Test ────────────────
+  simulation: {
+    abTestEnabled: u.simAbTestEnabled ?? false,
+    altConfig: (typeof u.simAltConfig === "object" && u.simAltConfig !== null && !Array.isArray(u.simAltConfig))
+      ? u.simAltConfig
+      : {},
+  },
+
   indicators: {
     enabled: indicatorUserConfig.enabled ?? false,
     entryPreset: indicatorUserConfig.entryPreset ?? "supertrend_break",
