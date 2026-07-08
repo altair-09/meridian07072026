@@ -245,7 +245,7 @@ export default function Trade() {
   const activeFilterCount = Object.values(activeFilters).filter((v) => v && v !== "" && v !== false && v !== null).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", flex: 1, overflowY: "auto", padding: "var(--space-6)" }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", flex: 1, overflowY: "auto", padding: "var(--space-6)" }}>
 
       {/* ── Header ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>

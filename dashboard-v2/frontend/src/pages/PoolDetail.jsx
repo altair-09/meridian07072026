@@ -369,7 +369,7 @@ function PriceRangeSlider({ pool, bins, priceMin, priceMax, onChangeMin, onChang
 // ── Left panel ─────────────────────────────────────────────────────────────────
 function LeftPanel({ pool, width }) {
   return (
-    <div style={{ width, flexShrink: 0, borderRight: "none", padding: "16px 14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ width: "100%", maxWidth: width, flexShrink: 0, borderRight: "none", padding: "16px 14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{pool.name}</span>
@@ -623,17 +623,25 @@ export default function PoolDetail() {
         <span className="t-caption text-muted">{pool.pool}</span>
       </div>
 
-      {/* 3-column layout with resize handles */}
-      <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <LeftPanel pool={pool} width={leftW} />
+      {/* 3-column layout with resize handles — stacks on mobile */}
+      <div className="pool-detail-layout" style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <div className="pool-detail-left" style={{ width: leftW, flexShrink: 0 }}>
+          <LeftPanel pool={pool} width={leftW} />
+        </div>
 
-        <ResizeHandle onDrag={(dx) => setLeftW((w) => Math.max(MIN_LEFT, Math.min(MAX_LEFT, w + dx)))} />
+        <div className="pool-detail-resize">
+          <ResizeHandle onDrag={(dx) => setLeftW((w) => Math.max(MIN_LEFT, Math.min(MAX_LEFT, w + dx)))} />
+        </div>
 
         <MiddlePanel pool={pool} candles={candles} />
 
-        <ResizeHandle onDrag={(dx) => setRightW((w) => Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, w - dx)))} />
+        <div className="pool-detail-resize">
+          <ResizeHandle onDrag={(dx) => setRightW((w) => Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, w - dx)))} />
+        </div>
 
-        <RightPanel pool={pool} width={rightW} />
+        <div className="pool-detail-right" style={{ width: rightW, flexShrink: 0 }}>
+          <RightPanel pool={pool} width={rightW} />
+        </div>
       </div>
     </div>
   );

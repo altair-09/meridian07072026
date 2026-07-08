@@ -67,6 +67,7 @@ export default function Sidebar() {
 
   return (
     <nav
+      className="sidebar"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{

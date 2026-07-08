@@ -224,7 +224,7 @@ export default function InsightsLessons() {
   const pendingDryRun = (simData?.review ?? []).filter((x) => x.status === "pending").length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
       <h1 className="t-display-sm">Insights & lessons</h1>
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--hairline)", paddingBottom: 0 }}>

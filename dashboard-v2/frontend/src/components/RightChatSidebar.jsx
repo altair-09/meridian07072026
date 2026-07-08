@@ -29,25 +29,36 @@ export default function RightChatSidebar() {
   }
 
   return (
-    <div
-      className="right-chat-sidebar"
-      style={{
-        width: 340, flexShrink: 0, borderLeft: "1px solid var(--hairline)",
-        padding: "var(--space-4)", position: "sticky", top: 0,
-        height: "100vh", overflowY: "auto",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-        <button
-          onClick={() => setChatOpen(false)}
-          aria-label="Minimize chat"
-          className="btn btn-secondary"
-          style={{ height: 32, width: 32, padding: 0 }}
-        >
-          <IconChevronRight size={16} stroke={1.75} />
-        </button>
+    <>
+      {/* Mobile backdrop */}
+      <div
+        onClick={() => setChatOpen(false)}
+        style={{
+          display: "none",
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 49,
+        }}
+        className="chat-backdrop"
+      />
+      <div
+        className="right-chat-sidebar"
+        style={{
+          width: 340, flexShrink: 0, borderLeft: "1px solid var(--hairline)",
+          padding: "var(--space-4)", position: "sticky", top: 0,
+          height: "100vh", overflowY: "auto",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button
+            onClick={() => setChatOpen(false)}
+            aria-label="Minimize chat"
+            className="btn btn-secondary"
+            style={{ height: 32, width: 32, padding: 0 }}
+          >
+            <IconChevronRight size={16} stroke={1.75} />
+          </button>
+        </div>
+        <ChatPanel />
       </div>
-      <ChatPanel />
-    </div>
+    </>
   );
 }

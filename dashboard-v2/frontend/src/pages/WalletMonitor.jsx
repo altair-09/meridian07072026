@@ -24,7 +24,7 @@ export default function WalletMonitor() {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h1 className="t-display-sm" style={{ flex: 1 }}>Wallet monitor</h1>
         <button className="btn btn-secondary" onClick={reload} disabled={loading}>Refresh</button>

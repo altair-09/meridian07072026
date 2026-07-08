@@ -154,7 +154,7 @@ export default function BotManager() {
   if (sysLoading) return <div style={{ padding: "var(--space-6)" }}><p className="t-body-sm text-muted">Memuat status bot...</p></div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h1 className="t-display-sm">Bot manager</h1>
         <div style={{ display: "flex", gap: 8 }}>

@@ -235,17 +235,17 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div className="header-row" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 className="t-display-sm" style={{ flex: 1 }}>Dashboard</h1>
         <Dropdown value={timeframe} onChange={setTimeframe} options={TIMEFRAMES} />
         <QuickActions />
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--space-4)" }}>
+      <div className="stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--space-4)" }}>
         <StatCard label="Total wallet" value={fmtUsd(totalValueUsd)} sub={`${openPositions} posisi aktif`} />
         <StatCard
           label={`Net PnL (${timeframe.toLowerCase()})`}
@@ -263,7 +263,7 @@ export default function Dashboard() {
       </div>
 
       {/* Bot + Lessons */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
+      <div className="two-col-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
         {/* Bot card */}
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -364,14 +364,14 @@ export default function Dashboard() {
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <span className="t-title-sm">Recent activity</span>
-          <span className="t-caption text-muted">Klik baris untuk tanya bot</span>
+          <span className="t-caption text-muted" style={{ fontSize: 11 }}>Klik untuk tanya bot</span>
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="activity-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["Time", "Bot", "Pool", "Event", "Result"].map((h) => (
+              {["TIME", "BOT", "POOL", "EVENT", "RESULT"].map((h) => (
                 <th key={h} className="t-caption-upper text-muted"
-                  style={{ textAlign: h === "Result" ? "right" : "left", padding: "0 0 10px", paddingRight: h !== "Result" ? 16 : 0 }}>
+                  style={{ textAlign: h === "RESULT" ? "right" : "left", padding: "0 0 10px", paddingRight: h !== "RESULT" ? 16 : 0 }}>
                   {h}
                 </th>
               ))}
@@ -381,11 +381,11 @@ export default function Dashboard() {
             {activity.map((a, i) => (
               <tr key={i} onClick={() => handleActivityClick(a)}
                 style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }} className="data-row">
-                <td className="t-code text-muted" style={{ padding: "11px 16px 11px 0" }}>{a.time}</td>
-                <td className="t-body-sm" style={{ padding: "11px 16px 11px 0" }}>{a.bot}</td>
-                <td className="t-code" style={{ padding: "11px 16px 11px 0", color: "var(--text-muted)" }}>{a.pool}</td>
-                <td className="t-body-sm" style={{ padding: "11px 16px 11px 0" }}>{a.event}</td>
-                <td className="t-body-sm" style={{ padding: "11px 0", textAlign: "right", fontWeight: 500, color: RESULT_COLORS[a.resultType] }}>
+                <td className="activity-time t-code text-muted" style={{ padding: "11px 16px 11px 0" }}>{a.time}</td>
+                <td className="activity-bot t-body-sm" style={{ padding: "11px 16px 11px 0" }}>{a.bot}</td>
+                <td className="activity-pool t-code" style={{ padding: "11px 16px 11px 0", color: "var(--text-muted)" }}>{a.pool}</td>
+                <td className="activity-event t-body-sm" style={{ padding: "11px 16px 11px 0" }}>{a.event}</td>
+                <td className="activity-result t-body-sm" style={{ padding: "11px 0", textAlign: "right", fontWeight: 500, color: RESULT_COLORS[a.resultType] }}>
                   {a.result}
                 </td>
               </tr>

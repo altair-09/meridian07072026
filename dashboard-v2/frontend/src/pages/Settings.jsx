@@ -285,7 +285,7 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
+    <div className="page-pad" style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", padding: "var(--space-6)", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <h1 className="t-display-sm">Settings</h1>
         <BotSelector value={bot} onChange={setBot} includeAll={false} />
