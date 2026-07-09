@@ -67,14 +67,22 @@ async function evaluateOne(pos) {
   }
 }
 
+const THROTTLE_MS = 200;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function runSimulationCycle() {
   const open = listSimPositions({ openOnly: true });
   if (open.length === 0) return;
+  log("sim_cycle", `Evaluating ${open.length} open simulated position(s)`);
+  let closedCount = 0;
   for (const pos of open) {
     try {
-      await evaluateOne(pos);
+      const result = await evaluateOne(pos);
+      if (result) closedCount++;
     } catch (e) {
       log("sim_cycle_error", `Failed evaluating sim position ${pos.id}: ${e.message}`);
     }
+    await sleep(THROTTLE_MS); // avoid hammering the RPC/pool-detail API
   }
+  if (closedCount > 0) log("sim_cycle", `Closed ${closedCount} simulated position(s) this cycle`);
 }

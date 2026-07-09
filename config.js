@@ -258,6 +258,10 @@ export const config = {
     // Virtual wallet balance (SOL) used to size paper-trading deploys while
     // DRY_RUN is active, instead of the real (possibly empty) wallet balance.
     virtualWalletSol: Number(u.simVirtualWalletSol ?? 10),
+    // Caps how many simulated positions can be open at once — each open
+    // position costs 2 RPC/API calls per evaluation cycle, so an unbounded
+    // count can rate-limit the RPC and stall evaluation entirely.
+    maxOpenPositions: Number(u.simMaxOpenPositions ?? 20),
   },
 
   indicators: {
