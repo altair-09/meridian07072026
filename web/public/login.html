@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Meridian — Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <form id="loginForm" class="w-full max-w-sm bg-slate-900 rounded-xl p-6 shadow-xl border border-slate-800">
+    <h1 class="text-xl font-semibold mb-1">Meridian Dashboard</h1>
+    <p class="text-slate-400 text-sm mb-6">Masuk untuk mengakses monitoring & kontrol bot.</p>
+    <label class="block text-sm mb-1 text-slate-300">Username</label>
+    <input name="username" autocomplete="username" class="w-full mb-4 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+    <label class="block text-sm mb-1 text-slate-300">Password</label>
+    <input name="password" type="password" autocomplete="current-password" class="w-full mb-4 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+    <p id="err" class="text-red-400 text-sm mb-3 hidden"></p>
+    <button class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium transition">Login</button>
+  </form>
+  <script>
+    const form = document.getElementById("loginForm");
+    const err = document.getElementById("err");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.classList.add("hidden");
+      const body = Object.fromEntries(new FormData(form));
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        window.location.href = "/";
+      } else {
+        const data = await res.json().catch(() => ({}));
+        err.textContent = data.error || "Login gagal";
+        err.classList.remove("hidden");
+      }
+    });
+  </script>
+</body>
+</html>

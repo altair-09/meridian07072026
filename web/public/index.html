@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Meridian Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen" x-data="dashboard()" x-init="init()">
+
+  <!-- Top bar -->
+  <header class="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 py-2 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="font-semibold">Meridian</span>
+      <button @click="toggleDryRun()" class="text-xs px-2 py-0.5 rounded-full"
+        :class="dryRun ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'"
+        x-text="dryRun ? 'DRY RUN' : 'LIVE'"></button>
+    </div>
+    <div class="flex items-center gap-1">
+      <button @click="openConfigModal()" aria-label="Pengaturan config" class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <button @click="showEnvModal = true" aria-label="Pengaturan .env" class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6M15.5 7.5L18 5l2 2-2.5 2.5"/></svg>
+      </button>
+      <button @click="logout()" class="text-xs text-slate-400 hover:text-slate-200 ml-1">Logout</button>
+    </div>
+  </header>
+  <p class="text-xs text-amber-300 text-center py-1 bg-slate-900" x-show="modeStatus" x-text="modeStatus"></p>
+  <p class="text-[10px] text-slate-500 text-center pb-1 bg-slate-900" x-show="!underPm2 && modeStatus" x-text="'Restart manual diperlukan (tidak berjalan di bawah PM2).'"></p>
+
+  <!-- Tabs -->
+  <nav class="flex overflow-x-auto text-sm border-b border-slate-800 bg-slate-900/50 no-scrollbar">
+    <template x-for="t in tabs" :key="t.id">
+      <button @click="tab = t.id" class="px-4 py-2.5 whitespace-nowrap border-b-2"
+        :class="tab === t.id ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400'"
+        x-text="t.label"></button>
+    </template>
+  </nav>
+
+  <main class="p-3 pb-24 w-full max-w-screen-2xl mx-auto">
+
+    <!-- Dashboard tab -->
+    <section x-show="tab === 'dashboard'" class="space-y-3">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="text-xs text-slate-400">Total Posisi</div>
+          <div class="text-2xl font-semibold" x-text="positions?.total_positions ?? '—'"></div>
+        </div>
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="text-xs text-slate-400">Saldo SOL</div>
+          <div class="text-2xl font-semibold" x-text="walletBalance ? walletBalance.sol + ' SOL' : '—'"></div>
+          <div class="text-xs text-slate-500 mt-0.5" x-show="walletBalance" x-text="'≈ $' + (walletBalance?.sol_usd ?? 0).toLocaleString()"></div>
+        </div>
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="text-xs text-slate-400">Total Wallet (USD)</div>
+          <div class="text-2xl font-semibold" x-text="walletBalance ? '$' + (walletBalance.total_usd ?? 0).toLocaleString() : '—'"></div>
+        </div>
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="text-xs text-slate-400">Token Usage (24h)</div>
+          <div class="text-2xl font-semibold" x-text="(tokenUsage?.total_tokens ?? 0).toLocaleString()"></div>
+        </div>
+      </div>
+
+      <div class="text-xs text-slate-400 px-1" x-show="tokenUsage">
+        Simulasi A/B test: <span x-text="(tokenUsage?.simulation_tokens ?? 0).toLocaleString()"></span> token dari total di atas
+      </div>
+
+      <h2 class="text-sm font-medium text-slate-300 mt-4 mb-1">Posisi Terbuka</h2>
+      <template x-if="!positions?.positions?.length">
+        <div class="text-slate-500 text-sm bg-slate-900 rounded-xl p-4 border border-slate-800">Belum ada posisi terbuka.</div>
+      </template>
+      <template x-for="p in (positions?.positions || [])" :key="p.position">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 mb-2">
+          <div class="flex justify-between items-center">
+            <span class="font-medium" x-text="p.pair"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full" :class="p.in_range ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'" x-text="p.in_range ? 'IN RANGE' : 'OUT OF RANGE'"></span>
+          </div>
+          <div class="text-sm text-slate-400 mt-1">
+            PnL: <span :class="p.pnl_usd >= 0 ? 'text-emerald-400' : 'text-red-400'" x-text="(p.pnl_pct ?? 0) + '%'"></span>
+            &middot; Fees: $<span x-text="p.unclaimed_fees_usd"></span>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- Screening / decisions tab -->
+    <section x-show="tab === 'screening'" class="space-y-3">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div class="flex rounded-lg overflow-hidden border border-slate-800 text-sm">
+          <button @click="setPoolMode('recommended')" class="px-3 py-1.5" :class="poolMode === 'recommended' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'">Recommended</button>
+          <button @click="setPoolMode('all')" class="px-3 py-1.5" :class="poolMode === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'">All Pools</button>
+        </div>
+        <span class="text-xs text-slate-500" x-text="poolsLoading ? 'Memuat...' : (sortedPools.length + ' pool')"></span>
+      </div>
+
+      <div class="overflow-x-auto bg-slate-900 rounded-xl border border-slate-800">
+        <table class="w-full text-sm whitespace-nowrap">
+          <thead>
+            <tr class="text-left text-xs text-slate-400 border-b border-slate-800">
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('name')">Pool</th>
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('tvl')">TVL</th>
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('volume_window')">Volume</th>
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('fee_active_tvl_ratio')">Fee/TVL</th>
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('bin_step')">Bin Step</th>
+              <th class="px-3 py-2 cursor-pointer" @click="sortPools('organic_score')">Organic</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="p in sortedPools" :key="p.pool">
+              <tr class="border-b border-slate-800/60 last:border-0">
+                <td class="px-3 py-2 font-medium" x-text="p.name"></td>
+                <td class="px-3 py-2" x-text="'$' + Math.round(p.tvl ?? 0).toLocaleString()"></td>
+                <td class="px-3 py-2" x-text="'$' + Math.round(p.volume_window ?? 0).toLocaleString()"></td>
+                <td class="px-3 py-2" x-text="(p.fee_active_tvl_ratio ?? 0).toFixed(3)"></td>
+                <td class="px-3 py-2" x-text="p.bin_step ?? '—'"></td>
+                <td class="px-3 py-2" x-text="Math.round(p.organic_score ?? 0)"></td>
+                <td class="px-3 py-2">
+                  <button @click="openDeploy(p)" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-xs">Deploy</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="text-slate-500 text-sm p-4" x-show="!poolsLoading && sortedPools.length === 0">Tidak ada pool untuk ditampilkan.</div>
+      </div>
+
+      <p class="text-xs" x-show="deployStatus" x-text="deployStatus"></p>
+
+      <h2 class="text-sm font-medium text-slate-300 mt-4">Kenapa ditolak / diambil</h2>
+      <template x-if="!decisions.length">
+        <div class="text-slate-500 text-sm bg-slate-900 rounded-xl p-4 border border-slate-800">Belum ada keputusan tercatat.</div>
+      </template>
+      <template x-for="d in decisions" :key="d.id">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="flex justify-between text-xs text-slate-400">
+            <span x-text="d.actor + ' · ' + d.type"></span>
+            <span x-text="new Date(d.ts).toLocaleString()"></span>
+          </div>
+          <div class="font-medium mt-1" x-text="d.pool_name || d.pool"></div>
+          <div class="text-sm text-slate-300 mt-1" x-text="d.summary"></div>
+          <div class="text-sm text-slate-400 mt-1" x-show="d.reason" x-text="'Alasan: ' + d.reason"></div>
+          <div class="text-xs text-red-300 mt-1" x-show="d.rejected?.length" x-text="'Ditolak: ' + (d.rejected || []).join(' | ')"></div>
+        </div>
+      </template>
+    </section>
+
+    <!-- Lessons tab -->
+    <section x-show="tab === 'lessons'" class="space-y-2">
+      <div class="bg-slate-900 rounded-xl p-3 border border-slate-800" x-show="perfSummary">
+        <div class="text-xs text-slate-400 mb-1">Ringkasan Performa</div>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div>Total closed: <span x-text="perfSummary?.total_positions_closed ?? 0"></span></div>
+          <div>Win rate: <span x-text="(perfSummary?.win_rate_pct ?? 0) + '%'"></span></div>
+          <div>Total PnL: $<span x-text="perfSummary?.total_pnl_usd ?? 0"></span></div>
+          <div>Avg PnL: <span x-text="(perfSummary?.avg_pnl_pct ?? 0) + '%'"></span></div>
+        </div>
+      </div>
+      <h2 class="text-sm font-medium text-slate-300 mt-3">Pelajaran Aktif</h2>
+      <template x-for="l in lessons" :key="l.id">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 text-sm">
+          <span x-text="l.rule"></span>
+          <span class="text-xs text-slate-500 block mt-1" x-text="(l.tags || []).join(', ')"></span>
+        </div>
+      </template>
+    </section>
+
+    <!-- Simulasi tab -->
+    <section x-show="tab === 'sim'" class="space-y-3">
+      <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-medium">A/B Test Strategi</div>
+          <div class="text-xs text-slate-400">Biaya token ekstra saat aktif — lihat token usage di atas</div>
+        </div>
+        <input type="checkbox" x-model="cfg.simulation.abTestEnabled" @change="saveConfig()" class="w-5 h-5" />
+      </div>
+
+      <h2 class="text-sm font-medium text-slate-300">Posisi Simulasi</h2>
+      <template x-if="!simPositions.length">
+        <div class="text-slate-500 text-sm bg-slate-900 rounded-xl p-4 border border-slate-800">Belum ada posisi simulasi.</div>
+      </template>
+      <template x-for="p in simPositions" :key="p.id">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="flex justify-between items-center">
+            <span class="font-medium" x-text="p.pool_name || p.pool"></span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300" x-text="'SIMULATED · ' + p.scenario"></span>
+          </div>
+          <div class="text-sm text-slate-400 mt-1">Est. PnL: <span x-text="(p.estimated_pnl_pct ?? 0) + '%'"></span></div>
+        </div>
+      </template>
+
+      <h2 class="text-sm font-medium text-slate-300 mt-4">Antrian Review Lesson (AI)</h2>
+      <template x-if="!pendingLessons.length">
+        <div class="text-slate-500 text-sm bg-slate-900 rounded-xl p-4 border border-slate-800">Tidak ada lesson menunggu review.</div>
+      </template>
+      <template x-for="pl in pendingLessons" :key="pl.id">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="text-sm" x-text="pl.rule"></div>
+          <div class="text-xs text-slate-400 mt-1" x-text="'Sample: ' + pl.sample_size + ' · Confidence: ' + pl.confidence"></div>
+          <div class="text-xs text-amber-300 mt-1" x-text="pl.caveat"></div>
+          <div class="flex gap-2 mt-2">
+            <button @click="promotePending(pl.id)" class="flex-1 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-sm">Promote</button>
+            <button @click="dismissPending(pl.id)" class="flex-1 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-sm">Dismiss</button>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- Chat tab -->
+    <section x-show="tab === 'chat'" class="flex flex-col h-[calc(100vh-140px)]">
+      <div class="flex-1 overflow-y-auto space-y-2 pb-2" x-ref="chatLog">
+        <template x-for="(m, i) in chatMessages" :key="i">
+          <div class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
+            <div class="max-w-[80%] rounded-xl px-3 py-2 text-sm" :class="m.role === 'user' ? 'bg-indigo-600' : 'bg-slate-800'">
+              <span class="text-[10px] block text-slate-300/70 mb-0.5" x-show="m.channel" x-text="m.channel"></span>
+              <span x-text="m.content"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+      <form @submit.prevent="sendChat()" class="flex gap-2 pt-2 border-t border-slate-800">
+        <input x-model="chatInput" placeholder="Tanya bot..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" />
+        <button class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm" :disabled="chatBusy">Kirim</button>
+      </form>
+    </section>
+
+  </main>
+
+  <!-- Config modal -->
+  <div x-show="showConfigModal" x-cloak class="fixed inset-0 z-40 bg-black/60 flex items-start md:items-center justify-center p-3 overflow-y-auto" @click.self="showConfigModal = false">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl my-6 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-medium">Pengaturan Screening / Management</span>
+        <button @click="showConfigModal = false" class="text-slate-400 hover:text-slate-200 text-xl leading-none">&times;</button>
+      </div>
+      <div class="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+        <template x-for="section in Object.keys(cfg)" :key="section">
+          <div class="bg-slate-950 rounded-xl p-3 border border-slate-800">
+            <div class="text-xs uppercase tracking-wide text-slate-500 mb-2" x-text="section"></div>
+            <template x-for="key in Object.keys(cfg[section] || {})" :key="key">
+              <div class="flex items-center gap-2 py-1.5 border-b border-slate-800/60 last:border-0" x-show="typeof cfg[section][key] !== 'object'">
+                <label class="flex-1 text-sm text-slate-300" x-text="key"></label>
+                <button type="button" class="info-dot text-xs w-5 h-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center relative"
+                  @click="toggleHelp(section + '.' + key)" @mouseenter="hoverHelp(section + '.' + key)" @mouseleave="hoverHelp(null)">
+                  i
+                  <div x-show="openHelp === (section + '.' + key)" @click.outside="openHelp = null"
+                    class="absolute z-30 right-0 top-6 w-64 text-left text-xs normal-case font-normal bg-slate-800 border border-slate-700 rounded-lg p-2 shadow-xl"
+                    x-text="help[key] || 'Tidak ada keterangan.'"></div>
+                </button>
+                <input class="w-28 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm"
+                  :type="typeof cfg[section][key] === 'boolean' ? 'checkbox' : 'text'"
+                  x-model="cfg[section][key]" />
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+      <button @click="saveConfig()" class="w-full mt-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium">Simpan Perubahan</button>
+      <p class="text-xs text-slate-500 mt-1" x-text="configStatus"></p>
+    </div>
+  </div>
+
+  <!-- .env modal -->
+  <div x-show="showEnvModal" x-cloak class="fixed inset-0 z-40 bg-black/60 flex items-start md:items-center justify-center p-3 overflow-y-auto" @click.self="showEnvModal = false">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md my-6 p-4">
+      <div class="flex items-center justify-between mb-1">
+        <span class="font-medium">Pengaturan .env</span>
+        <button @click="showEnvModal = false" class="text-slate-400 hover:text-slate-200 text-xl leading-none">&times;</button>
+      </div>
+      <p class="text-xs text-slate-500 mb-3">Nilai lama tidak ditampilkan demi keamanan — kosongkan field yang tidak mau diganti. Wallet private key tidak bisa diubah dari sini, edit langsung file <code>.env</code>.</p>
+      <div class="space-y-2">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Password admin baru</label>
+          <input type="password" x-model="envForm.newPassword" placeholder="Kosongkan jika tidak diganti" class="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm" />
+        </div>
+        <template x-for="key in envKeys" :key="key">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1" x-text="key"></label>
+            <input type="password" x-model="envForm.values[key]" placeholder="Kosongkan jika tidak diganti" class="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm" />
+          </div>
+        </template>
+      </div>
+      <button @click="saveEnv()" class="w-full mt-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium">Simpan dan Restart</button>
+      <p class="text-xs text-slate-500 mt-1" x-text="envStatus"></p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
