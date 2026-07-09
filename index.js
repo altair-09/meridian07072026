@@ -1,4 +1,5 @@
 import "./envcrypt.js";
+import { startWebServer } from "./web/server.js";
 import cron from "node-cron";
 import readline from "readline";
 import path from "path";
@@ -2020,6 +2021,7 @@ Focus on: hold duration, entry/exit timing, what win rates look like, whether sc
 } else if (isMain) {
   // Non-TTY: start immediately
   log("startup", "Non-TTY mode — starting cron cycles immediately.");
+  startWebServer();
   startCronJobs();
   maybeRunMissedBriefing().catch(() => { });
   startPolling(telegramHandler);
