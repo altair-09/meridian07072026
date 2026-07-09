@@ -32,6 +32,25 @@ function normalizeSymbol(symbol) {
   return String(symbol || "").trim().toUpperCase();
 }
 
+// Node's fetch() has no default timeout — if an upstream API is rate-limited
+// and holds the socket open without responding, an unbounded await can hang
+// a cron cycle forever (seen in production: a stuck screening cycle blocks
+// every subsequent cycle since _screeningBusy never clears). Wrap every
+// outbound call here with a hard timeout so a slow/dead upstream fails fast
+// instead of freezing the whole bot.
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function scoreCandidate(pool) {
   const feeTvl = Number(pool.fee_active_tvl_ratio || 0);
   const organic = Number(pool.organic_score || 0);
@@ -198,7 +217,7 @@ function getRawPoolScreeningRejectReason(pool, s) {
 }
 
 async function fetchDiscordSignalCandidates() {
-  const res = await fetch(`${getAgentMeridianBase()}/signals/discord/candidates`, {
+  const res = await fetchWithTimeout(`${getAgentMeridianBase()}/signals/discord/candidates`, {
     headers: getAgentMeridianHeaders(),
   });
   if (!res.ok) throw new Error(`discord signal candidates ${res.status}`);
@@ -213,7 +232,7 @@ async function fetchPoolDiscoveryPage({ page_size, filters, timeframe, category 
     `&timeframe=${timeframe}` +
     `&category=${category}`;
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
 
   if (!res.ok) {
     throw new Error(`Pool Discovery API error: ${res.status} ${res.statusText}`);
@@ -228,7 +247,7 @@ async function fetchPoolDiscoveryDetail({ poolAddress, timeframe }) {
     `&filter_by=${encodeURIComponent(`pool_address=${poolAddress}`)}` +
     `&timeframe=${timeframe}`;
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
 
   if (!res.ok) {
     throw new Error(`Pool detail API error: ${res.status} ${res.statusText}`);
@@ -287,7 +306,7 @@ async function applyVolatilityTimeframe(rawPools, sourceTimeframe) {
 }
 
 async function searchAssetsBySymbol(symbol) {
-  const res = await fetch(`${DATAPI_JUP}/assets/search?query=${encodeURIComponent(symbol)}`);
+  const res = await fetchWithTimeout(`${DATAPI_JUP}/assets/search?query=${encodeURIComponent(symbol)}`);
   if (!res.ok) throw new Error(`assets/search ${res.status}`);
   const data = await res.json();
   return Array.isArray(data) ? data : [data];
@@ -343,7 +362,7 @@ async function enrichDiscordSignalLaunchpads(rawPools) {
 
 async function findRivalPool(mint) {
   const url = `https://dlmm.datapi.meteora.ag/pools?query=${encodeURIComponent(mint)}&sort_by=${encodeURIComponent("tvl:desc")}&filter_by=${encodeURIComponent(`tvl>${PVP_MIN_ACTIVE_TVL}`)}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`rival pool search ${res.status}`);
   const data = await res.json();
   const pools = Array.isArray(data?.data) ? data.data : [];
@@ -556,7 +575,7 @@ export async function discoverPools({
     if (missingDev.length > 0) {
       const devResults = await Promise.allSettled(
         missingDev.map((p) =>
-          fetch(`${DATAPI_JUP}/assets/search?query=${p.base.mint}`)
+          fetchWithTimeout(`${DATAPI_JUP}/assets/search?query=${p.base.mint}`)
             .then((r) => r.ok ? r.json() : null)
             .then((d) => {
               const t = Array.isArray(d) ? d[0] : d;
