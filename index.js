@@ -414,8 +414,14 @@ export async function runScreeningCycle({ silent = false } = {}) {
   try {
     // Reuse pre-fetched balance — no extra RPC call needed
     const currentBalance = preBalance;
-    const deployAmount = computeDeployAmount(currentBalance.sol);
-    log("cron", `Computed deploy amount: ${deployAmount} SOL (wallet: ${currentBalance.sol} SOL)`);
+    // While paper-trading (DRY_RUN), size against the virtual wallet balance
+    // instead of the real (possibly empty) one, so simulated deploys reflect
+    // the capital the user configured for testing, not their live balance.
+    const sizingSol = process.env.DRY_RUN === "true"
+      ? config.simulation.virtualWalletSol
+      : currentBalance.sol;
+    const deployAmount = computeDeployAmount(sizingSol);
+    log("cron", `Computed deploy amount: ${deployAmount} SOL (wallet: ${currentBalance.sol} SOL${process.env.DRY_RUN === "true" ? `, virtual: ${sizingSol} SOL` : ""})`);
 
     // Load active strategy
     const activeStrategy = getActiveStrategy();

@@ -451,6 +451,7 @@ const toolMap = {
       gmgnApiKey: ["gmgn", "apiKey", ["gmgnApiKey"]],
       // simulation / A/B test
       simAbTestEnabled: ["simulation", "abTestEnabled", ["simAbTestEnabled"]],
+      simVirtualWalletSol: ["simulation", "virtualWalletSol", ["simVirtualWalletSol"]],
       // chart indicators
       chartIndicatorsEnabled: ["indicators", "enabled", ["chartIndicators", "enabled"]],
       indicatorEntryPreset: ["indicators", "entryPreset", ["chartIndicators", "entryPreset"]],

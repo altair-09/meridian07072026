@@ -255,6 +255,9 @@ export const config = {
     altConfig: (typeof u.simAltConfig === "object" && u.simAltConfig !== null && !Array.isArray(u.simAltConfig))
       ? u.simAltConfig
       : {},
+    // Virtual wallet balance (SOL) used to size paper-trading deploys while
+    // DRY_RUN is active, instead of the real (possibly empty) wallet balance.
+    virtualWalletSol: Number(u.simVirtualWalletSol ?? 10),
   },
 
   indicators: {
