@@ -578,6 +578,8 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
     let deployAttempted = false;
     let deploySucceeded = false;
+    log("cron", `Calling LLM (${config.llm.screeningModel}) with ${passing.length} candidate(s) — this can take up to a few minutes`);
+    const llmStartedAt = Date.now();
     const { content } = await agentLoop(`
 SCREENING CYCLE
 ${strategyBlock}
@@ -656,6 +658,7 @@ IMPORTANT:
           await liveMessage?.toolFinish(name, result, success);
         },
       });
+    log("cron", `LLM responded after ${Math.round((Date.now() - llmStartedAt) / 1000)}s`);
     screenReport = content;
     if (/⛔\s*NO DEPLOY/i.test(content)) {
       appendDecision({
