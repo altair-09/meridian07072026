@@ -1,5 +1,6 @@
 import "./envcrypt.js";
 import { startWebServer } from "./web/server.js";
+import { runSimulationCycle } from "./simulation.js";
 import cron from "node-cron";
 import readline from "readline";
 import path from "path";
@@ -691,6 +692,16 @@ export function startCronJobs() {
 
   const screenTask = cron.schedule(`*/${Math.max(1, config.schedule.screeningIntervalMin)} * * * *`, runScreeningCycle);
 
+  // Paper-trading (sim-state.json) — evaluates open simulated positions
+  // against live pool data on the same cadence as real position management.
+  const simTask = cron.schedule(`*/${Math.max(1, config.schedule.managementIntervalMin)} * * * *`, async () => {
+    try {
+      await runSimulationCycle();
+    } catch (e) {
+      log("sim_cycle_error", `runSimulationCycle failed: ${e.message}`);
+    }
+  });
+
   const healthTask = cron.schedule(`0 * * * *`, async () => {
     if (_managementBusy) return;
     _managementBusy = true;
@@ -824,7 +835,7 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }, oppMs);
   }
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog];
+  _cronTasks = [mgmtTask, screenTask, simTask, healthTask, briefingTask, briefingWatchdog];
   // Store interval refs so stopCronJobs can clear them
   _cronTasks._pnlPollInterval = pnlPollInterval;
   _cronTasks._opportunityPollInterval = opportunityPollInterval;

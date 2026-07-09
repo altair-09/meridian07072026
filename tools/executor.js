@@ -22,6 +22,7 @@ import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsO
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { getRecentDecisions } from "../decision-log.js";
+import { trackSimPosition } from "../sim-state.js";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
 import { REPO_ROOT, repoPath } from "../repo-root.js";
@@ -667,6 +668,28 @@ export async function executeTool(name, args) {
     const result = await fn(args);
     const duration = Date.now() - startTime;
     const success = result?.success !== false && !result?.error;
+
+    // DRY_RUN paper-trading: mirror the real screener's deploy decision into
+    // sim-state.json so PnL/lessons can be evaluated without real capital.
+    if (name === "deploy_position" && result?.dry_run === true) {
+      try {
+        trackSimPosition({
+          pool: result.would_deploy?.pool_address ?? args.pool_address,
+          pool_name: args.pool_name ?? args.pool_address?.slice(0, 8),
+          base_mint: args.base_mint,
+          scenario: "full_paper",
+          strategy: result.would_deploy?.strategy ?? args.strategy,
+          bin_range: { below: result.would_deploy?.bins_below, above: result.would_deploy?.bins_above },
+          amount_sol: result.would_deploy?.amount_y ?? args.amount_y ?? args.amount_sol,
+          active_bin: args.active_bin,
+          bin_step: args.bin_step,
+          fee_tvl_ratio: args.fee_tvl_ratio,
+          reasoning: args.reasoning ?? null,
+        });
+      } catch (e) {
+        log("sim_state_error", `Failed to mirror dry-run deploy into sim-state: ${e.message}`);
+      }
+    }
 
     logAction({
       tool: name,
