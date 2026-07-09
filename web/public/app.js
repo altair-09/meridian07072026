@@ -4,6 +4,7 @@ function dashboard() {
     tabs: [
       { id: "dashboard", label: "Dashboard" },
       { id: "screening", label: "Screening" },
+      { id: "activity", label: "Activity" },
       { id: "lessons", label: "Lessons" },
       { id: "sim", label: "Simulasi" },
       { id: "chat", label: "Chat" },
@@ -19,12 +20,14 @@ function dashboard() {
     decisions: [],
     lessons: [],
     perfSummary: null,
-    cfg: { screening: {}, management: {}, risk: {}, strategy: {}, schedule: {}, simulation: { abTestEnabled: false, altConfig: {} } },
+    cfg: { screening: {}, management: {}, risk: {}, strategy: {}, schedule: {}, simulation: { abTestEnabled: false, virtualWalletSol: 10, altConfig: {} } },
     help: {},
     openHelp: null,
     configStatus: "",
     simPositions: [],
     pendingLessons: [],
+    simReviewStatus: "",
+    simReviewBusy: false,
     chatMessages: [],
     chatInput: "",
     chatBusy: false,
@@ -173,7 +176,7 @@ function dashboard() {
 
     async loadConfig() {
       const cfg = await this.api("/api/config");
-      if (!cfg.simulation) cfg.simulation = { abTestEnabled: false, altConfig: {} };
+      if (!cfg.simulation) cfg.simulation = { abTestEnabled: false, virtualWalletSol: 10, altConfig: {} };
       this.cfg = cfg;
     },
 
@@ -237,15 +240,32 @@ function dashboard() {
     async saveConfig() {
       this.configStatus = "Menyimpan...";
       const changes = {};
+      const simKeyMap = { abTestEnabled: "simAbTestEnabled", virtualWalletSol: "simVirtualWalletSol" };
       for (const section of Object.keys(this.cfg)) {
         for (const [k, v] of Object.entries(this.cfg[section] || {})) {
           if (typeof v === "object") continue;
-          changes[section === "simulation" ? (k === "abTestEnabled" ? "simAbTestEnabled" : "simAltConfig") : k] = v;
+          changes[section === "simulation" ? (simKeyMap[k] || k) : k] = v;
         }
       }
       const result = await this.api("/api/config", { method: "POST", body: JSON.stringify({ changes }) });
       this.configStatus = result.success ? "Tersimpan." : `Gagal: ${result.error || (result.unknown || []).join(", ")}`;
       setTimeout(() => (this.configStatus = ""), 4000);
+    },
+
+    async runSimReview() {
+      this.simReviewBusy = true;
+      this.simReviewStatus = "Menganalisis posisi simulasi...";
+      try {
+        const result = await this.api("/api/sim/review", { method: "POST" });
+        const n = result?.proposed?.length ?? result?.pending?.length ?? 0;
+        this.simReviewStatus = result.error ? `Gagal: ${result.error}` : `Selesai — ${n} lesson diusulkan.`;
+        await this.loadSim();
+      } catch (e) {
+        this.simReviewStatus = `Gagal: ${e.message}`;
+      } finally {
+        this.simReviewBusy = false;
+        setTimeout(() => (this.simReviewStatus = ""), 6000);
+      }
     },
 
     async promotePending(id) {

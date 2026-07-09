@@ -148,6 +148,52 @@
       </template>
     </section>
 
+    <!-- Activity tab -->
+    <section x-show="tab === 'activity'" class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-medium text-slate-300">Riwayat Aktivitas Bot</h2>
+        <button @click="loadDashboard()" class="text-xs px-2 py-1 rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200">Refresh</button>
+      </div>
+      <template x-if="!decisions.length">
+        <div class="text-slate-500 text-sm bg-slate-900 rounded-xl p-4 border border-slate-800">Belum ada aktivitas tercatat.</div>
+      </template>
+      <template x-for="d in decisions" :key="d.id">
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+          <div class="flex justify-between items-start gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] px-2 py-0.5 rounded-full"
+                :class="{
+                  'bg-emerald-500/20 text-emerald-300': d.type === 'deploy',
+                  'bg-red-500/20 text-red-300': d.type === 'close',
+                  'bg-slate-700 text-slate-300': d.type === 'skip' || d.type === 'no_deploy',
+                }"
+                x-text="d.type"></span>
+              <span class="text-xs text-slate-400" x-text="d.actor"></span>
+            </div>
+            <span class="text-xs text-slate-500" x-text="new Date(d.ts).toLocaleString()"></span>
+          </div>
+          <div class="font-medium mt-1.5" x-text="d.pool_name || d.pool || '—'"></div>
+          <div class="text-sm text-slate-300 mt-1" x-text="d.summary"></div>
+          <div class="text-sm text-slate-400 mt-1" x-show="d.reason" x-text="'Alasan: ' + d.reason"></div>
+
+          <template x-if="d.metrics && Object.keys(d.metrics).length">
+            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-400">
+              <template x-for="(v, k) in d.metrics" :key="k">
+                <span><span class="text-slate-500" x-text="k + ': '"></span><span x-text="typeof v === 'number' ? Math.round(v * 100) / 100 : v"></span></span>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="d.risks?.length">
+            <div class="text-xs text-amber-300 mt-1" x-text="'Risiko: ' + d.risks.join(' | ')"></div>
+          </template>
+          <template x-if="d.rejected?.length">
+            <div class="text-xs text-red-300 mt-1" x-text="'Ditolak: ' + d.rejected.join(' | ')"></div>
+          </template>
+        </div>
+      </template>
+    </section>
+
     <!-- Lessons tab -->
     <section x-show="tab === 'lessons'" class="space-y-2">
       <div class="bg-slate-900 rounded-xl p-3 border border-slate-800" x-show="perfSummary">
@@ -177,6 +223,15 @@
         </div>
         <input type="checkbox" x-model="cfg.simulation.abTestEnabled" @change="saveConfig()" class="w-5 h-5" />
       </div>
+
+      <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-medium">Review Simulasi (AI)</div>
+          <div class="text-xs text-slate-400">Analisis posisi simulasi yang sudah ditutup dan usulkan lesson baru</div>
+        </div>
+        <button @click="runSimReview()" :disabled="simReviewBusy" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm whitespace-nowrap disabled:opacity-50" x-text="simReviewBusy ? 'Menganalisis...' : 'Jalankan Review'"></button>
+      </div>
+      <p class="text-xs text-slate-400" x-show="simReviewStatus" x-text="simReviewStatus"></p>
 
       <h2 class="text-sm font-medium text-slate-300">Posisi Simulasi</h2>
       <template x-if="!simPositions.length">
